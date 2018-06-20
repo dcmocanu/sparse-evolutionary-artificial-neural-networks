@@ -42,7 +42,7 @@ volume={104},
 number={2},
 pages={243--270},
 doi={10.1007/s10994-016-5570-z},
-url={https://doi.org/10.1007/s10994-016-5570-z}
+url={https://doi.org/10.1007/s10994-016-5570-z }
 }
 
 @phdthesis{Mocanu2017PhDthesis,

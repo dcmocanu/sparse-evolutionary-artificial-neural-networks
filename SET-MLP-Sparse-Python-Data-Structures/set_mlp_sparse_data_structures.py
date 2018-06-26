@@ -40,6 +40,7 @@
 # Thomas Hagebols: for performing a thorough analyze on the performance of SciPy sparse matrix operations
 # Ritchie Vink (https://www.ritchievink.com): for making available on Github a nice Python implementation of fully connected MLPs. This SET-MLP implementation was built on top of his MLP code:
 #                                             https://github.com/ritchie46/vanilla-machine-learning/blob/master/vanilla_mlp.py
+# Amarsagar Reddy Ramapuram Matavalam: for provided a fast fast implementation for the "weightsEvolution" method, after the initial release of this code.
 
 import numpy as np
 from scipy.sparse import csr_matrix
@@ -77,6 +78,13 @@ def createSparseWeights(epsilon,noRows,noCols):
     return weights
 
 
+def array_intersect(A, B):
+    # added by Amarsagar Reddy Ramapuram Matavalam (amar@iastate.edu)
+    # this are for array intersection
+    # inspired by https://stackoverflow.com/questions/8317022/get-intersecting-rows-across-two-2d-numpy-arrays
+    nrows, ncols = A.shape
+    dtype = {'names': ['f{}'.format(i) for i in range(ncols)], 'formats': ncols * [A.dtype]}
+    return np.in1d(A.view(dtype), B.view(dtype))  # boolean return
 
 class Relu:
     @staticmethod
@@ -352,7 +360,8 @@ class SET_MLP:
 
             t5 = datetime.datetime.now()
             if (i<epochs-1):# do not change connectivity pattern after the last epoch
-                self.weightsEvolution()
+                #self.weightsEvolution() #this was the orginal released implementation. It is more didactic, but slow.
+                self.weightsEvolution_Amar()  #this implementation has the same behaviour as the original one, but it is much faster.
             t6 = datetime.datetime.now()
             print("Weights evolution time ", t6 - t5)
 
@@ -366,7 +375,7 @@ class SET_MLP:
 
     def weightsEvolution(self):
         # this represents the core of the SET procedure. It removes the weights closest to zero in each layer and add new random weights
-        # TODO: this method could be seriously improved in terms of running time using Cython
+        # this was the original implementation which is a bit more didactic, but slow. For much faster running time please use "weightsEvolution_Amar"
         for i in range(1,self.n_layers):
 
             values=np.sort(self.w[i].data)
@@ -403,6 +412,85 @@ class SET_MLP:
             self.pdw[i]=pdwdok.tocsr()
             self.w[i]=wdok.tocsr()
 
+    def weightsEvolution_Amar(self):
+        # this represents the core of the SET procedure. It removes the weights closest to zero in each layer and add new random weights
+        # improved running time using numpy routines - Amarsagar Reddy Ramapuram Matavalam (amar@iastate.edu)
+        for i in range(1,self.n_layers):
+            # uncomment line below to stop evolution of dense weights more than 80% non-zeros
+            #if(self.w[i].count_nonzero()/(self.w[i].get_shape()[0]*self.w[i].get_shape()[1]) < 0.8):
+                t_ev_1 = datetime.datetime.now()
+                # converting to COO form - Added by Amar
+                wcoo=self.w[i].tocoo()
+                valsW=wcoo.data
+                rowsW=wcoo.row
+                colsW=wcoo.col
+
+                pdcoo=self.pdw[i].tocoo()
+                valsPD=pdcoo.data
+                rowsPD=pdcoo.row
+                colsPD=pdcoo.col
+                #print("Number of non zeros in W and PD matrix before evolution in layer",i,[np.size(valsW), np.size(valsPD)])
+                values=np.sort(self.w[i].data)
+                firstZeroPos = find_first_pos(values, 0)
+                lastZeroPos = find_last_pos(values, 0)
+
+                largestNegative = values[int((1-self.zeta) * firstZeroPos)]
+                smallestPositive = values[int(min(values.shape[0] - 1, lastZeroPos + self.zeta * (values.shape[0] - lastZeroPos)))]
+
+                #remove the weights (W) closest to zero and modify PD as well
+                valsWNew=valsW[(valsW > smallestPositive) | (valsW < largestNegative)]
+                rowsWNew=rowsW[(valsW > smallestPositive) | (valsW < largestNegative)]
+                colsWNew=colsW[(valsW > smallestPositive) | (valsW < largestNegative)]
+
+                newWRowColIndex=np.stack((rowsWNew,colsWNew) , axis=-1)
+                oldPDRowColIndex=np.stack((rowsPD,colsPD) , axis=-1)
+
+
+                newPDRowColIndexFlag=array_intersect(oldPDRowColIndex,newWRowColIndex) # careful about order
+
+                valsPDNew=valsPD[newPDRowColIndexFlag]
+                rowsPDNew=rowsPD[newPDRowColIndexFlag]
+                colsPDNew=colsPD[newPDRowColIndexFlag]
+
+                self.pdw[i] = coo_matrix((valsPDNew, (rowsPDNew, colsPDNew)),(self.dimensions[i - 1], self.dimensions[i])).tocsr()
+
+                # add new random connections
+                keepConnections=np.size(rowsWNew)
+                lengthRandom=valsW.shape[0]-keepConnections
+                randomVals=np.random.randn(lengthRandom) / 10 # to avoid multiple whiles, can we call 3*rand?
+                zeroVals=0*randomVals # explicit zeros
+
+                # adding  (wdok[ik,jk]!=0): condition
+                while (lengthRandom>0):
+                    ik = np.random.randint(0, self.dimensions[i - 1],size=lengthRandom,dtype='int32')
+                    jk = np.random.randint(0, self.dimensions[i],size=lengthRandom,dtype='int32')
+
+                    randomWRowColIndex=np.stack((ik,jk) , axis=-1)
+                    randomWRowColIndex=np.unique(randomWRowColIndex,axis=0) # removing duplicates in new rows&cols
+                    oldWRowColIndex=np.stack((rowsWNew,colsWNew) , axis=-1)
+
+                    uniqueFlag=~array_intersect(randomWRowColIndex,oldWRowColIndex) # careful about order & tilda
+
+
+                    ikNew=randomWRowColIndex[uniqueFlag][:,0]
+                    jkNew=randomWRowColIndex[uniqueFlag][:,1]
+                    # be careful - row size and col size needs to be verified
+                    rowsWNew=np.append(rowsWNew, ikNew)
+                    colsWNew=np.append(colsWNew, jkNew)
+
+                    lengthRandom=valsW.shape[0]-np.size(rowsWNew) # this will constantly reduce lengthRandom
+
+                # adding all the values along with corresponding row and column indices - Added by Amar
+                valsWNew=np.append(valsWNew, randomVals) # be careful - we can add to an existing link ?
+                #valsPDNew=np.append(valsPDNew, zeroVals) # be careful - adding explicit zeros - any reason??
+                if (valsWNew.shape[0] != rowsWNew.shape[0]):
+                    print("not good")
+                self.w[i]=coo_matrix((valsWNew , (rowsWNew , colsWNew)),(self.dimensions[i-1],self.dimensions[i])).tocsr()
+
+                #print("Number of non zeros in W and PD matrix after evolution in layer",i,[(self.w[i].data.shape[0]), (self.pdw[i].data.shape[0])])
+
+                t_ev_2 = datetime.datetime.now()
+                #print("Weights evolution time for layer",i,"is", t_ev_2 - t_ev_1)
 
 
     def predict(self, x_test,y_test,batch_size=1):
@@ -431,7 +519,7 @@ if __name__ == "__main__":
     np.random.seed(0)
 
     # load data
-    mat = sio.loadmat('data/lung.mat')
+    mat = sio.loadmat('data/lung.mat') #lung dataset was downloaded from http://featureselection.asu.edu/
     X = mat['X']
     # one hot encoding
     noClasses = np.max(mat['Y'])

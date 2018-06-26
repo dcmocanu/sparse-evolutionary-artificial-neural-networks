@@ -520,6 +520,9 @@ if __name__ == "__main__":
 
     # load data
     mat = sio.loadmat('data/lung.mat') #lung dataset was downloaded from http://featureselection.asu.edu/
+    # As the lung dataset has just few hundred samples, and few thousands features, you will observe a high variance in the accuracy from one epoch to another.
+    # We chose this dataset to show how the SET-MLP model handles overfitting.
+    # To see a much more stable behaviour of the model please experiment with datasets with a higher amount of samples, e.g. COIL-100 can be a really nice one as it has 100 classes and also the last layer will be sparse.
     X = mat['X']
     # one hot encoding
     noClasses = np.max(mat['Y'])

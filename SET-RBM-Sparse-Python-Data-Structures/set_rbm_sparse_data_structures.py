@@ -245,7 +245,7 @@ if __name__ == "__main__":
     np.random.seed(0)
 
     # load data
-    mat = sio.loadmat('data/COIL20.mat')
+    mat = sio.loadmat('data/COIL20.mat') #COIL20 dataset was downloaded from http://featureselection.asu.edu/
     X = mat['X']
     Y=mat['Y']  # the labels are, in fact, not used in this demo
 

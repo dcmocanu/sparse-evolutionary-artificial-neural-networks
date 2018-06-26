@@ -370,7 +370,7 @@ if __name__ == "__main__":
     np.random.seed(0)
 
     # load data
-    mat = sio.loadmat('data/lung.mat')
+    mat = sio.loadmat('data/lung.mat') #lung dataset was downloaded from http://featureselection.asu.edu/
     X = mat['X']
     # one hot encoding
     noClasses = np.max(mat['Y'])

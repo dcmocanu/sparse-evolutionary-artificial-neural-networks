@@ -30,7 +30,7 @@
 ###### Implementation 3 - SET-RBM using just sparse data structures from pure Python 3 (SET-RBM-Sparse-Python-Data-Structures)
 
 * Proof of concept implementation of Sparse Evolutionary Training (SET) for Restricted Boltzmann Machine (RBM) on COIL20 dataset using Python, SciPy sparse data structures, and (optionally) Cython.  
-* This implementation can be used to create SET-RBM with hundred of thousands of neurons on a standard laptop.
+* This implementation can be used to create SET-RBM with hundred of thousands of neurons on a standard laptop and was developed just before the publication of Reference 1.
 
 ###### References
 

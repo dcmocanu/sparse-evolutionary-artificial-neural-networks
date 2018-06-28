@@ -63,7 +63,7 @@ isbn = {978-90-386-4305-2},
 publisher = {Eindhoven University of Technology}
 }
 
-SET shows that large sparse neural networks can be build if topological sparsity is created from the design phase, before training. There are many algorithmic and implementation improvements which can be made. If you find this work interesting, please share the links to this Github page and to Reference 1. 
+SET shows that large sparse neural networks can be built if topological sparsity is created from the design phase, before training. There are many algorithmic and implementation improvements which can be made. If you find this work interesting, please share the links to this Github page and to Reference 1. For any question, suggestion, feedback please feel free to contact me by email.
 
 Many thanks,   
 Decebal

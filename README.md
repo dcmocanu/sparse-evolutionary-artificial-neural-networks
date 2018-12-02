@@ -65,5 +65,17 @@ publisher = {Eindhoven University of Technology}
 
 SET shows that large sparse neural networks can be built if topological sparsity is created from the design phase, before training. There are many algorithmic and implementation improvements which can be made. If you find this work interesting, please share the links to this Github page and to Reference 1. For any question, suggestion, feedback please feel free to contact me by email.
 
+###### Community
+
+Few days ago, I had a very pleasant unexpected surprise when I found out that Michael Klear released "Synapses". This library implements SET layers in PyTorch and as Michael says it is "truly sparse". For more details please read his article:
+
+https://towardsdatascience.com/the-sparse-future-of-deep-learning-bce05e8e094a   
+
+And try out "Synapses" yourself:
+
+https://github.com/AlliedToasters/synapses
+
+Many things can be improved in "Synapses". If interested, please contact and help Michael in developing further the project.
+
 Many thanks,   
 Decebal

@@ -162,7 +162,7 @@ class SET_MLP_CIFAR10:
         # add zeta random weights
         nrAdd = 0
         noRewires = noWeights - np.sum(rewiredWeights)
-        while (nrAdd <= noRewires):
+        while (nrAdd < noRewires):
             i = np.random.randint(0, rewiredWeights.shape[0])
             j = np.random.randint(0, rewiredWeights.shape[1])
             if (rewiredWeights[i, j] == 0):

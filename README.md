@@ -34,7 +34,8 @@
 
 ###### Implementation 4 - IJCAI 2019 tutorial - light hands-on experience code (Tutorial-IJCAI-2019-Scalable-Deep-Learning) 
 
-* Tutorial details - "Scalable Deep Learning: from theory to practice" https://sites.google.com/view/scalable-deep-learning-ijcai19
+* Tutorial details - "Scalable Deep Learning: from theory to practice" 
+https://sites.google.com/view/scalable-deep-learning-ijcai19
 * The code is based on Implementation 2 of SET-MLP to which Dropout is added.
 * In the "Pretrained_results" folder there is a nice animation "fashion_mnist_connections_evolution_per_input_pixel_rand0.gif" of the input layer connectivity evolution during training.    
 
@@ -67,7 +68,7 @@ author = {Mocanu, Decebal Constantin},
 year = {2017},
 isbn = {978-90-386-4305-2},
 publisher = {Eindhoven University of Technology},
-url={https://pure.tue.nl/ws/files/69949254/20170629_CO_Mocanu.pdf}
+url={https://pure.tue.nl/ws/files/69949254/20170629_CO_Mocanu.pdf }
 }
 
 4. @article{Liu2019onemillion,
@@ -75,7 +76,7 @@ url={https://pure.tue.nl/ws/files/69949254/20170629_CO_Mocanu.pdf}
   journal =       {arXiv:1901.09181},
   title =         {Sparse evolutionary Deep Learning with over one million artificial neurons on commodity hardware},
   year =          {2019},
-  url={https://arxiv.org/abs/1901.09181}
+  url={https://arxiv.org/abs/1901.09181 }
 }
 
 SET shows that large sparse neural networks can be built if topological sparsity is created from the design phase, before training. There are many algorithmic and implementation improvements which can be made. If you find this work interesting, please share the links to this Github page and to Reference 1. For any question, suggestion, feedback please feel free to contact me by email.

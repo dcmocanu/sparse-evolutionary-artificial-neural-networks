@@ -41,6 +41,7 @@
 import numpy as np
 from scipy.sparse import lil_matrix
 from scipy.sparse import dok_matrix
+#the "sparseoperations" Cython library was tested in Ubuntu 16.04. Please note that you may encounter some "solvable" issues if you compile it in Windows.
 import sparseoperations
 import datetime
 import scipy.io as sio

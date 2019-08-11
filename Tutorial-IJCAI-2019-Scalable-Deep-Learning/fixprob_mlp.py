@@ -35,12 +35,9 @@
 
 
 import numpy as np
-from scipy.sparse import csr_matrix
-from scipy.sparse import csc_matrix
 from scipy.sparse import lil_matrix
 from scipy.sparse import coo_matrix
-from scipy.sparse import dok_matrix
-import scipy.io as sio
+#the "sparseoperations" Cython library was tested in Ubuntu 16.04. Please note that you may encounter some "solvable" issues if you compile it in Windows.
 import sparseoperations
 import datetime
 

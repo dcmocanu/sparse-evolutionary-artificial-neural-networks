@@ -74,7 +74,7 @@ def createSparseWeights(epsilon,noRows,noCols):
     weights=lil_matrix((noRows, noCols))
     for i in range(epsilon * (noRows + noCols)):
         weights[np.random.randint(0,noRows),np.random.randint(0,noCols)]=np.float64(np.random.randn()/10)
-    print ("Create sparse matrix with ",weights.getnnz()," connections and ",(weights.getnnz()/(noRows * noCols))*100,"% sparsity level")
+    print ("Create sparse matrix with ",weights.getnnz()," connections and ",(weights.getnnz()/(noRows * noCols))*100,"% density level")
     weights=weights.tocsr()
     return weights
 

@@ -39,6 +39,14 @@ https://sites.google.com/view/scalable-deep-learning-ijcai19
 * The code is based on Implementation 2 of SET-MLP to which Dropout is added.
 * In the "Pretrained_results" folder there is a nice animation "fashion_mnist_connections_evolution_per_input_pixel_rand0.gif" of the input layer connectivity evolution during training.    
 
+###### Implementation 5 - ECMLPKDD 2019 tutorial - light hands-on experience code (Tutorial-ECMLPKDD-2019-Scalable-Deep-Learning) 
+
+* Tutorial details - "Scalable Deep Learning: from theory to practice" 
+https://sites.google.com/view/sdl-ecmlpkdd-2019-tutorial
+* The code is based on Implementation 2 of SET-MLP to which Dropout is added.
+* In the "Pretrained_results" folder there is a nice animation "fashion_mnist_connections_evolution_per_input_pixel_rand0.gif" of the input layer connectivity evolution during training.    
+
+
 ###### References
 
 For an easy understanding of these implementations please read the following articles. Also, if you use parts of this code in your work, please cite the corresponding ones:

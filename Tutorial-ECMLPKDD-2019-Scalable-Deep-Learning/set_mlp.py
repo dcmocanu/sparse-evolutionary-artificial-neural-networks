@@ -33,10 +33,15 @@
 # Ritchie Vink (https://www.ritchievink.com): for making available on Github a nice Python implementation of fully connected MLPs. This SET-MLP implementation was built on top of his MLP code:
 #                                             https://github.com/ritchie46/vanilla-machine-learning/blob/master/vanilla_mlp.py
 import numpy as np
+# Row-based list of lists sparse matrix. This is a structure for constructing sparse matrices incrementally.
 from scipy.sparse import lil_matrix
+# Coordinate format: also known as the ‘ijv’ or ‘triplet’ format
 from scipy.sparse import coo_matrix
+# Dictionary Of Keys based sparse matrix. This is an efficient structure for constructing sparse matrices incrementally.
 from scipy.sparse import dok_matrix
-#the "sparseoperations" Cython library was tested in Ubuntu 16.04. Please note that you may encounter some "solvable" issues if you compile it in Windows.
+
+# The "sparseoperations" Cython library was tested in Ubuntu 16.04.
+# Please note that you may encounter some "solvable" issues if you compile it in Windows.
 import sparseoperations
 import datetime
 from keras.datasets import cifar10
@@ -66,7 +71,7 @@ def createSparseWeights(epsilon, noRows, noCols):
     # generate an Erdos Renyi sparse weights mask
     weights = lil_matrix((noRows, noCols))
     for i in range(epsilon * (noRows + noCols)):
-        weights[np.random.randint(0, noRows), np.random.randint(0, noCols)] = np.float64(np.random.randn() / 10)
+        weights[np.random.randint(0, noRows), np.random.randint(0, noCols)] = np.float64(np.random.randn() * np.sqrt(2 / (noRows + noCols)))
     print("Create sparse matrix with ", weights.getnnz(), " connections and ",
           (weights.getnnz() / (noRows * noCols)) * 100, "% density level")
     weights = weights.tocsr()
@@ -80,7 +85,7 @@ def array_intersect(A, B):
     return np.in1d(A.view(dtype), B.view(dtype))  # boolean return
 
 
-class Relu:
+class ReLU:
     @staticmethod
     def activation(z):
         z[z < 0] = 0
@@ -106,7 +111,6 @@ class Sigmoid:
 class MSE:
     def __init__(self, activation_fn=None):
         """
-
         :param activation_fn: Class object of the activation function.
         """
         if activation_fn:
@@ -190,7 +194,7 @@ class SET_MLP:
         self.weight_decay = None
         self.epsilon = epsilon  # control the sparsity level as discussed in the paper
         self.zeta = None  # the fraction of the weights removed
-        self.droprate = 0  # dropout rate
+        self.droprate = 0.0  # dropout rate
         self.dimensions = dimensions
 
         # Weights and biases are initiated by index. For a one hidden layer net you will have a w[1] and w[2]
@@ -202,13 +206,8 @@ class SET_MLP:
         # Activations are also initiated by index. For the example we will have activations[2] and activations[3]
         self.activations = {}
         for i in range(len(dimensions) - 1):
-            if (i<len(dimensions) - 2):
-                self.w[i + 1] = createSparseWeights(self.epsilon, dimensions[i],
-                                                dimensions[i + 1])  # create sparse weight matrices
-            else:
-                self.w[i + 1] = createSparseWeights(self.epsilon, dimensions[i],
-                                                dimensions[i + 1])  # create sparse weight matrices
-
+            # create sparse weight matrices
+            self.w[i + 1] = createSparseWeights(self.epsilon, dimensions[i], dimensions[i + 1])
             self.b[i + 1] = np.zeros(dimensions[i + 1])
             self.activations[i + 2] = activations[i]
 
@@ -264,7 +263,8 @@ class SET_MLP:
 
         # compute backpropagation updates
         sparseoperations.backpropagation_updates_Cython(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
-        # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above. Please note that the running time will be much higher
+        # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above.
+        # Please note that the running time will be much higher
         # backpropagation_updates_Numpy(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
 
         update_params = {
@@ -280,7 +280,8 @@ class SET_MLP:
 
             # compute backpropagation updates
             sparseoperations.backpropagation_updates_Cython(a[i - 1], delta, dw.row, dw.col, dw.data)
-            # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above. Please note that the running time will be much higher
+            # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above.
+            # Please note that the running time will be much higher
             # backpropagation_updates_Numpy(a[i - 1], delta, dw.row, dw.col, dw.data)
 
             update_params[i - 1] = (dw.tocsr(), delta)
@@ -308,7 +309,7 @@ class SET_MLP:
         self.b[index] += self.pdd[index] - self.weight_decay * self.b[index]
 
     def fit(self, x, y_true, x_test, y_test, loss, epochs, batch_size, learning_rate=1e-3, momentum=0.9,
-            weight_decay=0.0002, zeta=0.3, dropoutrate=0, testing=True, save_filename=""):
+            weight_decay=0.0002, zeta=0.3, dropoutrate=0.0, testing=True, save_filename=""):
         """
         :param x: (array) Containing parameters
         :param y_true: (array) Containing one hot encoded labels.
@@ -324,6 +325,7 @@ class SET_MLP:
         """
         if not x.shape[0] == y_true.shape[0]:
             raise ValueError("Length of x and y arrays don't match")
+
         # Initiate the loss object with the final activation function
         self.loss = loss(self.activations[self.n_layers])
         self.learning_rate = learning_rate
@@ -331,7 +333,7 @@ class SET_MLP:
         self.weight_decay = weight_decay
         self.zeta = zeta
         self.droprate = dropoutrate
-        self.save_filename=save_filename
+        self.save_filename = save_filename
         self.inputLayerConnections = []
         self.inputLayerConnections.append(self.getCoreInputConnections())
         np.savez_compressed(self.save_filename + "_input_connections.npz",
@@ -355,7 +357,6 @@ class SET_MLP:
                 k = j * batch_size
                 l = (j + 1) * batch_size
                 z, a = self._feed_forward(x_[k:l], True)
-
 
                 self._back_prop(z, a, y_[k:l])
 
@@ -383,7 +384,7 @@ class SET_MLP:
 
             t5 = datetime.datetime.now()
             if (i < epochs - 1):  # do not change connectivity pattern after the last epoch
-                # self.weightsEvolution_I() #this implementation is more didactic, but slow.
+                # self.weightsEvolution_I() # this implementation is more didactic, but slow.
                 self.weightsEvolution_II()  # this implementation has the same behaviour as the one above, but it is much faster.
             t6 = datetime.datetime.now()
             print("Weights evolution time ", t6 - t5)
@@ -656,36 +657,37 @@ def image_data_augmentation(x_train):
     # Usage: datagen.flow(x_train, y_train, batch_size=batch_size)
     return datagen
 
+
 if __name__ == "__main__":
 
     for i in range(1):
 
-        #load data
-        noTrainingSamples=2000 #max 60000 for Fashion MNIST
-        noTestingSamples = 1000  # max 10000 for Fshion MNIST
+        # load data
+        noTrainingSamples = 2000  # max 60000 for Fashion MNIST
+        noTestingSamples = 1000   # max 10000 for Fshion MNIST
         X_train, Y_train, X_test, Y_test = load_cifar10_data(noTestingSamples, noTestingSamples)
 
-        #set model parameters
+        # set model parameters
         noHiddenNeuronsLayer=1000
-        epsilon=13 #set the sparsity level
-        zeta=0.3 #in [0..1]. It gives the percentage of unimportant connections which are removed and replaced with random ones after every epoch
-        noTrainingEpochs=400
-        batchSize=40
-        dropoutRate=0.2
-        learningRate=0.05
-        momentum=0.9
-        weightDecay=0.0002
+        epsilon = 13  # set the sparsity level
+        zeta = 0.3    # in [0..1]. It gives the percentage of unimportant connections which are removed and replaced with random ones after every epoch
+        noTrainingEpochs = 400
+        batchSize = 40
+        dropoutRate = 0.2
+        learningRate = 0.05
+        momentum = 0.9
+        weightDecay = 0.0002
 
         np.random.seed(i)
 
         # create SET-MLP (MLP with adaptive sparse connectivity trained with Sparse Evolutionary Training)
-        print ("Number of neurons per layer:",X_train.shape[1], noHiddenNeuronsLayer, noHiddenNeuronsLayer,noHiddenNeuronsLayer, Y_train.shape[1] )
-        set_mlp = SET_MLP((X_train.shape[1], noHiddenNeuronsLayer, noHiddenNeuronsLayer,noHiddenNeuronsLayer, Y_train.shape[1]), (Relu, Relu,Relu, Sigmoid), epsilon=epsilon)
+        print ("Number of neurons per layer:", X_train.shape[1], noHiddenNeuronsLayer, noHiddenNeuronsLayer, noHiddenNeuronsLayer, Y_train.shape[1])
+        set_mlp = SET_MLP((X_train.shape[1], noHiddenNeuronsLayer, noHiddenNeuronsLayer, noHiddenNeuronsLayer, Y_train.shape[1]), (ReLU, ReLU, ReLU, Sigmoid), epsilon=epsilon)
 
         # train SET-MLP
         set_mlp.fit(X_train, Y_train, X_test, Y_test, loss=MSE, epochs=noTrainingEpochs, batch_size=batchSize, learning_rate=learningRate,
                     momentum=momentum, weight_decay=weightDecay, zeta=zeta, dropoutrate=dropoutRate, testing=True,
-                    save_filename="Results/set_mlp_"+str(noTrainingSamples)+"_training_samples_e"+str(epsilon)+"_rand"+str(i))
+                    save_filename="Results/set_mlp_" + str(noTrainingSamples) + "_training_samples_e" + str(epsilon) +"_rand" + str(i))
 
         # test SET-MLP
         accuracy, _ = set_mlp.predict(X_test, Y_test, batch_size=1)

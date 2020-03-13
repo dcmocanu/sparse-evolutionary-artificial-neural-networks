@@ -100,7 +100,6 @@ class Sigmoid:
         return Sigmoid.activation(z) * (1 - Sigmoid.activation(z))
 
 
-
 class MSE:
     def __init__(self, activation_fn=None):
         """
@@ -340,9 +339,6 @@ class SET_MLP:
         metrics = np.zeros((epochs, 4))
 
         for i in range(epochs):
-
-
-
             # Shuffle the data
             seed = np.arange(x.shape[0])
             np.random.shuffle(seed)

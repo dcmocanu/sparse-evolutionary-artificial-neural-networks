@@ -39,6 +39,9 @@ from scipy.sparse import dok_matrix
 #the "sparseoperations" Cython library was tested in Ubuntu 16.04. Please note that you may encounter some "solvable" issues if you compile it in Windows.
 import sparseoperations
 import datetime
+from keras.datasets import cifar10
+from keras.utils import np_utils
+from keras.preprocessing.image import ImageDataGenerator
 
 
 def backpropagation_updates_Numpy(a, delta, rows, cols, out):
@@ -579,7 +582,79 @@ def load_fashion_mnist_data(noTrainingSamples,noTestingSamples):
     X_train = X_train.astype('float64') / 255.
     X_test = X_test.astype('float64') / 255.
 
-    return X_train,Y_train,X_test,Y_test
+    return X_train, Y_train, X_test, Y_test
+
+def load_cifar10_data(noTrainingSamples,noTestingSamples):
+    np.random.seed(0)
+
+    # read CIFAR10 data
+    (x_train, y_train), (x_test, y_test) = cifar10.load_data()
+
+    y_train = np_utils.to_categorical(y_train, 10)
+    y_test = np_utils.to_categorical(y_test, 10)
+    x_train = x_train.astype('float32')
+    x_test = x_test.astype('float32')
+
+    indexTrain = np.arange(x_train.shape[0])
+    np.random.shuffle(indexTrain)
+
+    indexTest = np.arange(x_test.shape[0])
+    np.random.shuffle(indexTest)
+
+    x_train = x_train[indexTrain[0:noTrainingSamples], :]
+    y_train = y_train[indexTrain[0:noTrainingSamples], :]
+    x_test = x_test[indexTest[0:noTestingSamples], :]
+    y_test = y_test[indexTest[0:noTestingSamples], :]
+
+    # normalize data
+    xTrainMean = np.mean(x_train, axis=0)
+    xTtrainStd = np.std(x_train, axis=0)
+    x_train = (x_train - xTrainMean) / xTtrainStd
+    x_test = (x_test - xTrainMean) / xTtrainStd
+
+    return x_train, x_test, y_train, y_test
+
+
+def image_data_augmentation(x_train):
+    print('Using real-time data augmentation.')
+
+    # This will do preprocessing and realtime data augmentation:
+    datagen = ImageDataGenerator(
+        featurewise_center=False,  # set input mean to 0 over the dataset
+        samplewise_center=False,  # set each sample mean to 0
+        featurewise_std_normalization=False,  # divide inputs by std of the dataset
+        samplewise_std_normalization=False,  # divide each input by its std
+        zca_whitening=False,  # apply ZCA whitening
+        zca_epsilon=1e-06,  # epsilon for ZCA whitening
+        rotation_range=0,  # randomly rotate images in the range (degrees, 0 to 180)
+        # randomly shift images horizontally (fraction of total width)
+        width_shift_range=0.1,
+        # randomly shift images vertically (fraction of total height)
+        height_shift_range=0.1,
+        shear_range=0.,  # set range for random shear
+        zoom_range=0.,  # set range for random zoom
+        channel_shift_range=0.,  # set range for random channel shifts
+        # set mode for filling points outside the input boundaries
+        fill_mode='nearest',
+        cval=0.,  # value used for fill_mode = "constant"
+        horizontal_flip=True,  # randomly flip images
+        vertical_flip=False,  # randomly flip images
+        # set rescaling factor (applied before any other transformation)
+        rescale=None,
+        # set function that will be applied on each input
+        preprocessing_function=None,
+        # image data format, either "channels_first" or "channels_last"
+        data_format=None,
+        # fraction of images reserved for validation (strictly between 0 and 1)
+        validation_split=0.0)
+
+    # Compute quantities required for feature-wise normalization
+    # (std, mean, and principal components if ZCA whitening is applied).
+    datagen.fit(x_train)
+
+    # Return data generator
+    # Usage: datagen.flow(x_train, y_train, batch_size=batch_size)
+    return datagen
 
 if __name__ == "__main__":
 
@@ -588,7 +663,7 @@ if __name__ == "__main__":
         #load data
         noTrainingSamples=2000 #max 60000 for Fashion MNIST
         noTestingSamples = 1000  # max 10000 for Fshion MNIST
-        X_train, Y_train, X_test, Y_test = load_fashion_mnist_data(noTrainingSamples,noTestingSamples)
+        X_train, Y_train, X_test, Y_test = load_cifar10_data(noTestingSamples, noTestingSamples)
 
         #set model parameters
         noHiddenNeuronsLayer=1000

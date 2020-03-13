@@ -47,7 +47,7 @@ from keras import optimizers
 import numpy as np
 from keras import backend as K
 #Please note that in newer versions of keras_contrib you may encounter some import errors. You can find a fix for it on the Internet, or as an alternative you can try other activations functions.
-from keras_contrib.layers.advanced_activations import SReLU
+from keras_contrib.layers.advanced_activations.srelu import SReLU
 from keras.datasets import cifar10
 from keras.utils import np_utils
 
@@ -142,7 +142,7 @@ class SET_MLP_CIFAR10:
         self.model.add(Dense(4000, name="sparse_3",kernel_constraint=MaskWeights(self.wm3),weights=self.w3))
         self.model.add(SReLU(name="srelu3",weights=self.wSRelu3))
         self.model.add(Dropout(0.3))
-        self.model.add(Dense(self.num_classes, name="dense_4",weights=self.w4)) #please note that there is no need for a sparse output layer as the number of classes is much smaller than the number of input hidden neurons
+        self.model.add(Dense(self.num_classes, name="dense_4", weights=self.w4)) #please note that there is no need for a sparse output layer as the number of classes is much smaller than the number of input hidden neurons
         self.model.add(Activation('softmax'))
 
     def rewireMask(self,weights, noWeights):
@@ -226,7 +226,7 @@ class SET_MLP_CIFAR10:
                                 validation_data=(x_test, y_test),
                                  initial_epoch=epoch-1)
 
-            self.accuracies_per_epoch.append(historytemp.history['val_acc'][0])
+            self.accuracies_per_epoch.append(historytemp.history['val_accuracy'][0])
 
             #ugly hack to avoid tensorflow memory increase for multiple fit_generator calls. Theano shall work more nicely this but it is outdated in general
             self.weightsEvolution()

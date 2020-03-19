@@ -83,31 +83,29 @@ class Worker:
         return [param.grad.data.cpu() for param in self.model.parameters()], loss.data, batchlabels.size(0)
 
 class ParameterServer:
-    def __init__(self, no_neurons, batch_size, epochs=10, epsilon=13):
+    def __init__(self, **config):
 
         #  Training related
-        self.learning_rate = None
-        self.momentum = None
-        self.weight_decay = None
-        self.epsilon = epsilon  # control the sparsity level as discussed in the paper
-        self.zeta = 0.3  # the fraction of the weights removed
-        self.dropout_rate = 0.2  # dropout rate
+        self.momentum = config['momentum']
+        self.weight_decay = config['weight_decay']
+        self.epsilon = config['epsilon']  # control the sparsity level as discussed in the paper
+        self.zeta = config['zeta']   # the fraction of the weights removed
+        self.dropout_rate = config['dropout_rate']   # dropout rate
         self.epoch = 0
-        self.init_lr = 0.05
+        self.init_lr = config['lr']
         self.lr_schedule = 'decay'
         self.lr = self.init_lr
         self.decay = 0.0
-        self.batch_size = batch_size
-        self.epochs = epochs
-        self.no_neurons = no_neurons
+        self.batch_size = config['batch_size']
+        self.epochs = config['n_epochs']
+        self.no_neurons = config['n_hidden_neurons']
 
         # server worker related parameters
         # location, foldername added new as compared to ParameterServer
         self.max_delay = 1
         self.queue = Queue(self.max_delay + 1)
-        self.num_workers = 12
+        self.num_workers = config['n_processes']
         self.workers = []
-        #self.inf_batch_size = 10000
         self.delaytype = 'const'
 
         # data loading
@@ -117,9 +115,9 @@ class ParameterServer:
         #self.test_loader = DataLoader(self.test_data, batch_size=10000, num_workers=8)
 
         # choosing model and loss function
-        self.dimensions = (self.x_train.shape[1], no_neurons, no_neurons, no_neurons,
+        self.dimensions = (self.x_train.shape[1], self.no_neurons, self.no_neurons, self.no_neurons,
                               self.y_train.shape[1])
-        self.model = SET_MLP(self.dimensions, (Relu, Relu, Relu, Sigmoid), MSE, epsilon=epsilon)
+        self.model = SET_MLP(self.dimensions, (Relu, Relu, Relu, Sigmoid), **config)
         self.n_layers = len(self.dimensions)
 
         # Functions to be called at init

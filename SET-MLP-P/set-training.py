@@ -24,13 +24,13 @@ parser.add_argument('--epsilon', type=int, default=13, metavar='E',
 parser.add_argument('--zeta', type=float, default=0.3, metavar='Z',
                     help='It gives the percentage of unimportant connections which are removed and replaced with '
                          'random ones after every epoch(in [0..1])')
-parser.add_argument('--no-neurons', type=int, default=3000, metavar='H',
+parser.add_argument('--n-neurons', type=int, default=3000, metavar='H',
                     help='Number of neurons in the hidden layer')
 parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
-parser.add_argument('--num-processes', type=int, default=4, metavar='N',
+parser.add_argument('--n-processes', type=int, default=1, metavar='N',
                     help='how many training processes to use (default: 2)')
 parser.add_argument('--cuda', action='store_true', default=False,
                     help='enables CUDA training')
@@ -42,29 +42,42 @@ if __name__ == "__main__":
     for i in range(1):
 
         #load data
-        noTrainingSamples = 2000 # max 60000 for Fashion MNIST
+        noTrainingSamples = 5000 # max 60000 for Fashion MNIST
         noTestingSamples = 1000  # max 10000 for Fshion MNIST
         X_train, Y_train, X_test, Y_test = load_cifar10_data(noTrainingSamples, noTestingSamples)
 
         #set model parameters
-        noHiddenNeuronsLayer = args.no_neurons
+        n_hidden_neurons = args.n_neurons
         epsilon = args.epsilon
         zeta = args.zeta
-        noTrainingEpochs = args.epochs
-        batchSize = args.batch_size
-        dropoutRate = args.dropout_rate
-        learningRate = args.lr
+        n_epochs = args.epochs
+        batch_size = args.batch_size
+        dropout_rate = args.dropout_rate
+        learning_rate = args.lr
         momentum = args.momentum
-        weightDecay = args.weight_decay
+        weight_decay = args.weight_decay
+        n_processes = args.n_processes
+
+        config = {
+            'n_processes': n_processes,
+            'n_epochs': n_epochs,
+            'delay': 1,
+            'delaytype': 'const',  # const or random
+            'batch_size': batch_size,
+            'dropout_rate': dropout_rate,
+            'seed': i,
+            'lr': learning_rate,
+            'zeta': zeta,
+            'epsilon': epsilon,
+            'momentum': momentum,
+            'weight_decay': weight_decay,
+            'n_hidden_neurons': n_hidden_neurons
+        }
 
         np.random.seed(i)
 
         # create SET-MLP (MLP with adaptive sparse connectivity trained with Sparse Evolutionary Training)
-        print ("Number of neurons per layer:", X_train.shape[1], noHiddenNeuronsLayer, noHiddenNeuronsLayer, noHiddenNeuronsLayer, Y_train.shape[1] )
-
-        # create SET-MLP (MLP with adaptive sparse connectivity trained with Sparse Evolutionary Training)
-        print("Number of neurons per layer:", X_train.shape[1], noHiddenNeuronsLayer, noHiddenNeuronsLayer,
-              noHiddenNeuronsLayer, Y_train.shape[1])
+        print("Number of neurons per layer:", X_train.shape[1], n_hidden_neurons, n_hidden_neurons, n_hidden_neurons, Y_train.shape[1])
 
 
         # set_mlp = SET_MLP((X_train.shape[1], noHiddenNeuronsLayer, noHiddenNeuronsLayer, noHiddenNeuronsLayer,
@@ -77,7 +90,7 @@ if __name__ == "__main__":
         #             save_filename="Results/set_mlp_" + str(noTrainingSamples) + "_training_samples_e" + str(
         #                 epsilon) + "_rand" + str(i))
 
-        ps = ParameterServer(noHiddenNeuronsLayer, batchSize)
+        ps = ParameterServer(**config)
         ps.train()
 
         # test SET-MLP

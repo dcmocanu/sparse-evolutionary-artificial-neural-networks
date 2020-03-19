@@ -168,7 +168,7 @@ class NoActivation:
 
 
 class SET_MLP:
-    def __init__(self, dimensions, activations, loss, epsilon=13):
+    def __init__(self, dimensions, activations, **config):
         """
         :param dimensions: (tpl/ list) Dimensions of the neural net. (input, hidden layer, output)
         :param activations: (tpl/ list) Activations functions.
@@ -188,12 +188,12 @@ class SET_MLP:
         activations = (          Relu,  Relu,  Relu,  Sigmoid)
         """
         self.n_layers = len(dimensions)
-        self.learning_rate = 0.05
-        self.momentum = 0.9
-        self.weight_decay = 0.0002
-        self.epsilon = epsilon  # control the sparsity level as discussed in the paper
-        self.zeta = 0.3  # the fraction of the weights removed
-        self.droprate = 0.2  # dropout rate
+        self.learning_rate = config['lr']
+        self.momentum = config['momentum']
+        self.weight_decay = config['weight_decay']
+        self.epsilon = config['epsilon']  # control the sparsity level as discussed in the paper
+        self.zeta = config['zeta']  # the fraction of the weights removed
+        self.dropout_rate = config['dropout_rate']  # dropout rate
         self.dimensions = dimensions
 
         # Weights and biases are initiated by index. For a one hidden layer net you will have a w[1] and w[2]
@@ -227,7 +227,7 @@ class SET_MLP:
 
         print("Creation sparse weights time: ", t2 - t1)
 
-        self.loss = loss(self.activations[self.n_layers])
+        self.loss = MSE(self.activations[self.n_layers])
 
     def _feed_forward(self, x, drop=False):
         """
@@ -246,13 +246,13 @@ class SET_MLP:
             z[i + 1] = a[i] @ self.w[i] + self.b[i]
             if (drop == False):
                 if (i > 1):
-                    z[i + 1] = z[i + 1] * (1 - self.droprate)
+                    z[i + 1] = z[i + 1] * (1 - self.dropout_rate)
             a[i + 1] = self.activations[i + 1].activation(z[i + 1])
             if (drop):
                 if (i < self.n_layers - 1):
                     dropMask = np.random.rand(a[i + 1].shape[0], a[i + 1].shape[1])
-                    dropMask[dropMask >= self.droprate] = 1
-                    dropMask[dropMask < self.droprate] = 0
+                    dropMask[dropMask >= self.dropout_rate] = 1
+                    dropMask[dropMask < self.dropout_rate] = 0
                     a[i + 1] = dropMask * a[i + 1]
 
         return z, a
@@ -347,7 +347,7 @@ class SET_MLP:
         self.momentum = 0.9
         self.weight_decay = 0.0002
         self.zeta = 0.3
-        self.droprate = 0.2
+        self.dropout_rate = 0.2
         self.save_filename = save_filename
         self.batchSize = batch_size
         self.inputLayerConnections = []

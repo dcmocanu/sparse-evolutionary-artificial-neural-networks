@@ -168,7 +168,7 @@ class NoActivation:
 
 
 class SET_MLP:
-    def __init__(self, dimensions, activations, epsilon=20):
+    def __init__(self, dimensions, activations, loss, epsilon=13):
         """
         :param dimensions: (tpl/ list) Dimensions of the neural net. (input, hidden layer, output)
         :param activations: (tpl/ list) Activations functions.
@@ -188,13 +188,12 @@ class SET_MLP:
         activations = (          Relu,  Relu,  Relu,  Sigmoid)
         """
         self.n_layers = len(dimensions)
-        self.loss = None
-        self.learning_rate = None
-        self.momentum = None
-        self.weight_decay = None
+        self.learning_rate = 0.05
+        self.momentum = 0.9
+        self.weight_decay = 0.0002
         self.epsilon = epsilon  # control the sparsity level as discussed in the paper
-        self.zeta = None  # the fraction of the weights removed
-        self.droprate = 0  # dropout rate
+        self.zeta = 0.3  # the fraction of the weights removed
+        self.droprate = 0.2  # dropout rate
         self.dimensions = dimensions
 
         # Weights and biases are initiated by index. For a one hidden layer net you will have a w[1] and w[2]
@@ -227,6 +226,8 @@ class SET_MLP:
         t2 = datetime.datetime.now()
 
         print("Creation sparse weights time: ", t2 - t1)
+
+        self.loss = loss(self.activations[self.n_layers])
 
     def _feed_forward(self, x, drop=False):
         """
@@ -277,7 +278,6 @@ class SET_MLP:
         # delta output layer
         delta = self.loss.delta(y_true, a[self.n_layers])
         dw = coo_matrix(self.w[self.n_layers - 1])
-
         # compute backpropagation updates
         sparseoperations.backpropagation_updates_Cython(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
         # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above. Please note that the running time will be much higher
@@ -343,11 +343,11 @@ class SET_MLP:
 
         # Initiate the loss object with the final activation function
         self.loss = loss(self.activations[self.n_layers])
-        self.learning_rate = learning_rate
-        self.momentum = momentum
-        self.weight_decay = weight_decay
-        self.zeta = zeta
-        self.droprate = dropoutrate
+        self.learning_rate = 0.05
+        self.momentum = 0.9
+        self.weight_decay = 0.0002
+        self.zeta = 0.3
+        self.droprate = 0.2
         self.save_filename = save_filename
         self.batchSize = batch_size
         self.inputLayerConnections = []
@@ -373,7 +373,6 @@ class SET_MLP:
                 k = j * batch_size
                 l = (j + 1) * batch_size
                 z, a = self._feed_forward(x_[k:l], True)
-
 
                 self._back_prop(z, a, y_[k:l])
 

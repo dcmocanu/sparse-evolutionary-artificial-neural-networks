@@ -1,4 +1,5 @@
 from set_mlp import *
+from parameter_server import *
 import time
 import argparse
 
@@ -23,7 +24,7 @@ parser.add_argument('--epsilon', type=int, default=13, metavar='E',
 parser.add_argument('--zeta', type=float, default=0.3, metavar='Z',
                     help='It gives the percentage of unimportant connections which are removed and replaced with '
                          'random ones after every epoch(in [0..1])')
-parser.add_argument('--no-neurons', type=int, default=1000, metavar='H',
+parser.add_argument('--no-neurons', type=int, default=3000, metavar='H',
                     help='Number of neurons in the hidden layer')
 parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
@@ -60,15 +61,27 @@ if __name__ == "__main__":
 
         # create SET-MLP (MLP with adaptive sparse connectivity trained with Sparse Evolutionary Training)
         print ("Number of neurons per layer:", X_train.shape[1], noHiddenNeuronsLayer, noHiddenNeuronsLayer, noHiddenNeuronsLayer, Y_train.shape[1] )
-        set_mlp = SET_MLP((X_train.shape[1], noHiddenNeuronsLayer, noHiddenNeuronsLayer, noHiddenNeuronsLayer,
-                           Y_train.shape[1]), (Relu, Relu, Relu, Sigmoid), epsilon=epsilon)
 
-        # train SET-MLP
-        set_mlp.fit(X_train, Y_train, X_test, Y_test, loss=MSE, epochs=noTrainingEpochs, batch_size=batchSize, learning_rate=learningRate,
-                    momentum=momentum, weight_decay=weightDecay, zeta=zeta, dropoutrate=dropoutRate, testing=True,
-                    save_filename="Results/set_mlp_"+str(noTrainingSamples)+"_training_samples_e"+str(epsilon)+"_rand"+str(i))
+        # create SET-MLP (MLP with adaptive sparse connectivity trained with Sparse Evolutionary Training)
+        print("Number of neurons per layer:", X_train.shape[1], noHiddenNeuronsLayer, noHiddenNeuronsLayer,
+              noHiddenNeuronsLayer, Y_train.shape[1])
+
+
+        # set_mlp = SET_MLP((X_train.shape[1], noHiddenNeuronsLayer, noHiddenNeuronsLayer, noHiddenNeuronsLayer,
+        #                    Y_train.shape[1]), (Relu, Relu, Relu, Sigmoid), MSE, epsilon=epsilon)
+        #
+        # # train SET-MLP
+        # set_mlp.fit(X_train, Y_train, X_test, Y_test, loss=MSE, epochs=noTrainingEpochs, batch_size=batchSize,
+        #             learning_rate=learningRate,
+        #             momentum=momentum, weight_decay=weightDecay, zeta=zeta, dropoutrate=dropoutRate, testing=True,
+        #             save_filename="Results/set_mlp_" + str(noTrainingSamples) + "_training_samples_e" + str(
+        #                 epsilon) + "_rand" + str(i))
+
+        ps = ParameterServer(noHiddenNeuronsLayer, batchSize)
+        ps.train()
 
         # test SET-MLP
-        accuracy, _ = set_mlp.predict(X_test, Y_test, batch_size=1)
 
-        print("\nAccuracy of the last epoch on the testing data: ", accuracy)
+        # accuracy, _ = ps.predict(X_test, Y_test, batch_size=1)
+
+        # print("\nAccuracy of the last epoch on the testing data: ", accuracy)

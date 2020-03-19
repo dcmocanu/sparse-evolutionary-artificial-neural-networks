@@ -44,7 +44,7 @@ from keras import optimizers
 import numpy as np
 from keras import backend as K
 #Please note that in newer versions of keras_contrib you may encounter some import errors. You can find a fix for it on the Internet, or as an alternative you can try other activations functions.
-from keras_contrib.layers.advanced_activations import SReLU
+from keras_contrib.layers.advanced_activations.srelu import SReLU
 from keras.datasets import cifar10
 from keras.utils import np_utils
 

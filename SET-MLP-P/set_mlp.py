@@ -39,6 +39,12 @@ from scipy.sparse import dok_matrix
 #the "sparseoperations" Cython library was tested in Ubuntu 16.04. Please note that you may encounter some "solvable" issues if you compile it in Windows.
 import sparseoperations
 import datetime
+import time
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+import multiprocessing as mp
+from keras.datasets import cifar10
+from keras.utils import np_utils
+from keras.preprocessing.image import ImageDataGenerator
 
 
 def backpropagation_updates_Numpy(a, delta, rows, cols, out):
@@ -196,19 +202,31 @@ class SET_MLP:
         self.b = {}
         self.pdw = {}
         self.pdd = {}
-
-        # Activations are also initiated by index. For the example we will have activations[2] and activations[3]
         self.activations = {}
-        for i in range(len(dimensions) - 1):
-            if (i<len(dimensions) - 2):
-                self.w[i + 1] = createSparseWeights(self.epsilon, dimensions[i],
-                                                dimensions[i + 1])  # create sparse weight matrices
-            else:
-                self.w[i + 1] = createSparseWeights(self.epsilon, dimensions[i],
-                                                dimensions[i + 1])  # create sparse weight matrices
 
+        t1 = datetime.datetime.now()
+
+        for i in range(len(dimensions) - 1):
+            self.w[i + 1] = createSparseWeights(self.epsilon, dimensions[i], dimensions[i + 1]) #create sparse weight matrices
             self.b[i + 1] = np.zeros(dimensions[i + 1])
             self.activations[i + 2] = activations[i]
+
+        # with  ProcessPoolExecutor() as executor:
+        #     # Activations are also initiated by index. For the example we will have activations[2] and activations[3]
+        #     self.activations = {}
+        #     noRows = dimensions[:-1]
+        #     noCols = dimensions[1:]
+        #
+        #     # create sparse weight matrices
+        #
+        #     results = executor.map(createSparseWeights, [epsilon] * len(noCols), noRows, noCols)
+        #     for i, res in enumerate(results):
+        #         self.w[i + 1] = res
+        #         self.b[i + 1] = np.zeros(dimensions[i + 1])
+        #         self.activations[i + 2] = activations[i]
+        t2 = datetime.datetime.now()
+
+        print("Creation sparse weights time: ", t2 - t1)
 
     def _feed_forward(self, x, drop=False):
         """
@@ -322,6 +340,7 @@ class SET_MLP:
         """
         if not x.shape[0] == y_true.shape[0]:
             raise ValueError("Length of x and y arrays don't match")
+
         # Initiate the loss object with the final activation function
         self.loss = loss(self.activations[self.n_layers])
         self.learning_rate = learning_rate
@@ -329,7 +348,8 @@ class SET_MLP:
         self.weight_decay = weight_decay
         self.zeta = zeta
         self.droprate = dropoutrate
-        self.save_filename=save_filename
+        self.save_filename = save_filename
+        self.batchSize = batch_size
         self.inputLayerConnections = []
         self.inputLayerConnections.append(self.getCoreInputConnections())
         np.savez_compressed(self.save_filename + "_input_connections.npz",
@@ -340,9 +360,6 @@ class SET_MLP:
         metrics = np.zeros((epochs, 4))
 
         for i in range(epochs):
-
-
-
             # Shuffle the data
             seed = np.arange(x.shape[0])
             np.random.shuffle(seed)
@@ -369,8 +386,8 @@ class SET_MLP:
             # this part is useful to understand model performance and can be commented for production settings
             if (testing):
                 t3 = datetime.datetime.now()
-                accuracy_test, activations_test = self.predict(x_test, y_test, batchSize)
-                accuracy_train, activations_train = self.predict(x, y_true, batchSize)
+                accuracy_test, activations_test = self.predict(x_test, y_test, self.batchSize)
+                accuracy_train, activations_train = self.predict(x, y_true, self.batchSize)
                 t4 = datetime.datetime.now()
                 maximum_accuracy = max(maximum_accuracy, accuracy_test)
                 loss_test = self.loss.loss(y_test, activations_test)
@@ -583,40 +600,78 @@ def load_fashion_mnist_data(noTrainingSamples,noTestingSamples):
     X_train = X_train.astype('float64') / 255.
     X_test = X_test.astype('float64') / 255.
 
-    return X_train,Y_train,X_test,Y_test
+    return X_train, Y_train, X_test, Y_test
 
-if __name__ == "__main__":
+def load_cifar10_data(noTrainingSamples,noTestingSamples):
+    np.random.seed(0)
 
-    for i in range(1):
+    # read CIFAR10 data
+    (x_train, y_train), (x_test, y_test) = cifar10.load_data()
 
-        #load data
-        noTrainingSamples=2000 #max 60000 for Fashion MNIST
-        noTestingSamples = 1000  # max 10000 for Fshion MNIST
-        X_train, Y_train, X_test, Y_test = load_fashion_mnist_data(noTrainingSamples,noTestingSamples)
+    y_train = np_utils.to_categorical(y_train, 10)
+    y_test = np_utils.to_categorical(y_test, 10)
+    x_train = x_train.astype('float32')
+    x_test = x_test.astype('float32')
 
-        #set model parameters
-        noHiddenNeuronsLayer=1000
-        epsilon=13 #set the sparsity level
-        zeta=0.3 #in [0..1]. It gives the percentage of unimportant connections which are removed and replaced with random ones after every epoch
-        noTrainingEpochs=400
-        batchSize=40
-        dropoutRate=0.2
-        learningRate=0.05
-        momentum=0.9
-        weightDecay=0.0002
+    indexTrain = np.arange(x_train.shape[0])
+    np.random.shuffle(indexTrain)
 
-        np.random.seed(i)
+    indexTest = np.arange(x_test.shape[0])
+    np.random.shuffle(indexTest)
 
-        # create SET-MLP (MLP with adaptive sparse connectivity trained with Sparse Evolutionary Training)
-        print ("Number of neurons per layer:",X_train.shape[1], noHiddenNeuronsLayer, noHiddenNeuronsLayer,noHiddenNeuronsLayer, Y_train.shape[1] )
-        set_mlp = SET_MLP((X_train.shape[1], noHiddenNeuronsLayer, noHiddenNeuronsLayer,noHiddenNeuronsLayer, Y_train.shape[1]), (Relu, Relu,Relu, Sigmoid), epsilon=epsilon)
+    x_train = x_train[indexTrain[0:noTrainingSamples], :]
+    y_train = y_train[indexTrain[0:noTrainingSamples], :]
+    x_test = x_test[indexTest[0:noTestingSamples], :]
+    y_test = y_test[indexTest[0:noTestingSamples], :]
 
-        # train SET-MLP
-        set_mlp.fit(X_train, Y_train, X_test, Y_test, loss=MSE, epochs=noTrainingEpochs, batch_size=batchSize, learning_rate=learningRate,
-                    momentum=momentum, weight_decay=weightDecay, zeta=zeta, dropoutrate=dropoutRate, testing=True,
-                    save_filename="Results/set_mlp_"+str(noTrainingSamples)+"_training_samples_e"+str(epsilon)+"_rand"+str(i))
+    # normalize data
+    xTrainMean = np.mean(x_train, axis=0)
+    xTtrainStd = np.std(x_train, axis=0)
+    x_train = (x_train - xTrainMean) / xTtrainStd
+    x_test = (x_test - xTrainMean) / xTtrainStd
 
-        # test SET-MLP
-        accuracy, _ = set_mlp.predict(X_test, Y_test, batch_size=1)
+    x_train = x_train.reshape(-1, 32 * 32 * 3).astype('float64')
+    x_test = x_test.reshape(-1, 32 * 32 * 3).astype('float64')
+    return x_train, y_train, x_test, y_test
 
-        print("\nAccuracy of the last epoch on the testing data: ", accuracy)
+
+def image_data_augmentation(x_train):
+    print('Using real-time data augmentation.')
+
+    # This will do preprocessing and realtime data augmentation:
+    datagen = ImageDataGenerator(
+        featurewise_center=False,  # set input mean to 0 over the dataset
+        samplewise_center=False,  # set each sample mean to 0
+        featurewise_std_normalization=False,  # divide inputs by std of the dataset
+        samplewise_std_normalization=False,  # divide each input by its std
+        zca_whitening=False,  # apply ZCA whitening
+        zca_epsilon=1e-06,  # epsilon for ZCA whitening
+        rotation_range=0,  # randomly rotate images in the range (degrees, 0 to 180)
+        # randomly shift images horizontally (fraction of total width)
+        width_shift_range=0.1,
+        # randomly shift images vertically (fraction of total height)
+        height_shift_range=0.1,
+        shear_range=0.,  # set range for random shear
+        zoom_range=0.,  # set range for random zoom
+        channel_shift_range=0.,  # set range for random channel shifts
+        # set mode for filling points outside the input boundaries
+        fill_mode='nearest',
+        cval=0.,  # value used for fill_mode = "constant"
+        horizontal_flip=True,  # randomly flip images
+        vertical_flip=False,  # randomly flip images
+        # set rescaling factor (applied before any other transformation)
+        rescale=None,
+        # set function that will be applied on each input
+        preprocessing_function=None,
+        # image data format, either "channels_first" or "channels_last"
+        data_format=None,
+        # fraction of images reserved for validation (strictly between 0 and 1)
+        validation_split=0.0)
+
+    # Compute quantities required for feature-wise normalization
+    # (std, mean, and principal components if ZCA whitening is applied).
+    datagen.fit(x_train)
+
+    # Return data generator
+    # Usage: datagen.flow(x_train, y_train, batch_size=batch_size)
+    return datagen

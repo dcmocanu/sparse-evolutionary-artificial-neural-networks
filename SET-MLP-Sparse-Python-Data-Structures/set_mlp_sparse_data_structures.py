@@ -556,4 +556,4 @@ if __name__ == "__main__":
     # test SET-MLP
     accuracy,_=set_mlp.predict(X_test,Y_test,batch_size=1)
 
-    print ("\nAccuracy of the last epoch on the testing data: ",accuracy)
+    print ("\nAccuracy of the last epoch on the testing data: ", accuracy)

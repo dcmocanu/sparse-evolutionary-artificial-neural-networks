@@ -232,8 +232,8 @@ class ParameterServer:
             # Shuffle the data
             seed = np.arange(self.x_train.shape[0])
             np.random.shuffle(seed)
-            x_ = self.x_train[seed]
-            y_ = self.y_train[seed]
+            self.x_train = self.x_train[seed]
+            self.y_train = self.y_train[seed]
 
             # try:
             self.step()
@@ -262,13 +262,13 @@ class ParameterServer:
             if testing:
                 print("epoch test loss")
                 start_time = time.time()
-                accuracy_test, activations_test = self.predict(self.x_test, self.y_test, self.batch_size)
+                accuracy_test, activations_test = self.model.predict(self.x_test, self.y_test, self.batch_size)
                 test_time = time.time() - start_time
                 print("test time", test_time)
 
                 print("epoch train loss")
                 start_time = time.time()
-                accuracy_train, activations_train = self.predict(self.x_train, self.y_train, self.batch_size)
+                accuracy_train, activations_train = self.model.predict(self.x_train, self.y_train, self.batch_size)
                 train_time = time.time() - start_time
                 print("train time", train_time)
 

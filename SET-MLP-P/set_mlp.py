@@ -247,11 +247,11 @@ class SET_MLP:
         return params
 
     def set_parameters(self, params):
-        self.w = params[0]
-        self.b = params[1]
-        self.pdw = params[2]
-        self.pdd = params[3]
-        self.activations = params[4]
+        self.w = params['w']
+        self.b = params['b']
+        self.pdw = params['pdw']
+        self.pdd = params['pdd']
+        self.activations = params['activations']
 
     def _feed_forward(self, x, drop=False):
         """
@@ -522,11 +522,11 @@ class SET_MLP:
                 self.pdw[i] = coo_matrix((valsPDNew, (rowsPDNew, colsPDNew)),
                                          (self.dimensions[i - 1], self.dimensions[i])).tocsr()
 
-                if(i==1):
-                    self.inputLayerConnections.append(coo_matrix((valsWNew, (rowsWNew, colsWNew)),
-                                       (self.dimensions[i - 1], self.dimensions[i])).getnnz(axis=1))
-                    np.savez_compressed(self.save_filename + "_input_connections.npz",
-                                        inputLayerConnections=self.inputLayerConnections)
+                # if(i==1):
+                #     self.inputLayerConnections.append(coo_matrix((valsWNew, (rowsWNew, colsWNew)),
+                #                        (self.dimensions[i - 1], self.dimensions[i])).getnnz(axis=1))
+                #     np.savez_compressed(self.save_filename + "_input_connections.npz",
+                #                         inputLayerConnections=self.inputLayerConnections)
 
                 # add new random connections
                 keepConnections = np.size(rowsWNew)

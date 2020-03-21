@@ -1,42 +1,23 @@
 from set_mlp  import *
 import torch
 import types
-from torch.utils.data import DataLoader, Sampler
+from torch.utils.data import DataLoader
+from random import Random, shuffle
 import copy
-from torchvision import datasets, transforms, models
 
 
-class SubsetSequentialSampler(Sampler):
-    def __init__(self, indices):
-        self.indices = indices
+def shared_randomness_partitions(n, num_workers):
+    # remove last data point
+    dinds = list(range(n-1))
+    shuffle(dinds)
+    worker_size = (n-1) // num_workers
 
-    def __iter__(self):
-        #         return (self.indices[i] for i in torch.randperm(len(self.indices)))
-        return (self.indices[i] for i in range(len(self.indices)))
+    data = dict.fromkeys(list(range(num_workers)))
 
-    def __len__(self):
-        return len(self.indices)
+    for w in range(num_workers):
+        data[w] = dinds[w * worker_size: (w+1) * worker_size]
 
-
-def load_dataset(name='CIFAR10', location='dataset', train=True):
-    if name == 'CIFAR10':
-        dataset = datasets.CIFAR10(
-            location,
-            train=train,
-            download=True,
-            transform=transforms.Compose(
-                [transforms.ToTensor(),
-                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]))
-    else:
-        dataset = datasets.MNIST(
-            'data/MNIST',
-            train=train,
-            download=True,
-            transform=transforms.Compose(
-                [transforms.ToTensor(),
-                 transforms.Normalize((0.5,), (0.5,))]))
-
-    return dataset
+    return data
 
 
 class Queue:
@@ -87,7 +68,7 @@ class Worker:
 
         params = self.parent.queue.sample(self.delay)
 
-        self.model.set_parameters(params)
+        self.model.set_parameters(copy.deepcopy(params))
 
         del params
 
@@ -154,8 +135,6 @@ class ParameterServer:
         # data loading
         self.x_train, self.y_train, self.x_test, self.y_test = load_cifar10_data(self.n_training_samples, self.n_testing_samples)
 
-        self.train_data = load_dataset()
-
         # set model dimensions
         self.dimensions = (self.x_train.shape[1], self.no_neurons, self.no_neurons, self.no_neurons,
                               self.y_train.shape[1])
@@ -166,25 +145,25 @@ class ParameterServer:
         # Instantiate master model
         self.model = SET_MLP(self.dimensions, (Relu, Relu, Relu, Sigmoid), **config)
         self.n_layers = len(self.dimensions)
+        self.config = config
 
         self.update_queue()
 
     def initiate_workers(self):
-
+        self.partitions = shared_randomness_partitions(len(self.x_train), self.num_workers)
+        # initialize workers on the server
         for id_ in range(self.num_workers):
-            loader = DataLoader(self.train_data, batch_size=self.batch_size,
-                                sampler=SubsetSequentialSampler(self.partitions[id_]),
-                                num_workers=0)
-            self.workers.append(Worker(parent=self, id=id_, loader=loader,
-                                     batch_size=self.batch_size, model=self.model))
+            self.workers.append(Worker(parent=self, id=id_, data=self.x_train[self.partitions[id_]],
+                                     labels=self.y_train[self.partitions[id_]],
+                                     batch_size=self.batch_size, model=copy.deepcopy(self.model)))
 
     def update_queue(self, reset=False):
         if reset:
             self.queue.queue = []
             self.queue.len = 0
-            self.queue.push([copy.deepcopy(param) for _, param in self.model.parameters()])
+            self.queue.push(copy.deepcopy(self.model.parameters()))
         else:
-            self.queue.push([copy.deepcopy(param) for _, param in self.model.parameters().items()])
+            self.queue.push(copy.deepcopy(self.model.parameters()))
 
     def lr_update(self, itr, epoch):
         if self.lr_schedule == 'const':
@@ -248,6 +227,7 @@ class ParameterServer:
         for epoch in range(self.epochs):
 
             self.epoch = epoch
+            print("\nSET-MLP Epoch ", epoch)
             start_time = time.time()
             # Shuffle the data
             seed = np.arange(self.x_train.shape[0])
@@ -262,15 +242,14 @@ class ParameterServer:
             #     print('exception in step ', e)
             #     raise e
 
-            for j in range(self.x_train.shape[0] // self.batch_size):
-                k = j * self.batch_size
-                l = (j + 1) * self.batch_size
-                z, a = self.model._feed_forward(x_[k:l], False)
-
-                self.model._back_prop(z, a, y_[k:l])
-
+            # for j in range(self.x_train.shape[0] // self.batch_size):
+            #     k = j * self.batch_size
+            #     l = (j + 1) * self.batch_size
+            #     z, a = self.model._feed_forward(x_[k:l], False)
+            #
+            #     self.model._back_prop(z, a, y_[k:l])
+            #
             step_time = time.time() - start_time
-            print("\nSET-MLP Epoch ", epoch)
             print("Training time: ", step_time)
 
             running_itr += 1
@@ -305,6 +284,14 @@ class ParameterServer:
                 print("Testing time: ", test_time,"; Loss train: ", loss_train, "; Loss test: ", loss_test, "; Accuracy train: ", accuracy_train,
                       "; Accuracy test: ", accuracy_test, "; Maximum accuracy test: ", best_acc)
 
+            t5 = datetime.datetime.now()
+            if (epoch < self.epochs - 1):  # do not change connectivity pattern after the last epoch
+
+                # self.weightsEvolution_I() #this implementation is more didactic, but slow.
+                self.model.weightsEvolution_II()  # this implementation has the same behaviour as the one above, but it is much faster.
+            t6 = datetime.datetime.now()
+            print("Weights evolution time ", t6 - t5)
+
         print("training completed")
 
     def step(self):
@@ -319,7 +306,13 @@ class ParameterServer:
         losses = []
         start_time = time.time()
 
+        partitions = shared_randomness_partitions(len(self.x_train), self.num_workers)
+        self.partitions = partitions
+
         for worker_ in self.workers:
+
+            worker_.data = self.x_train[self.partitions[worker_.id]]
+            worker_.labels = self.y_train[self.partitions[worker_.id]]
 
             pdw[worker_.id], pdd[worker_.id], worker_loss, batch_size_ = worker_.compute_gradients()
 
@@ -330,7 +323,11 @@ class ParameterServer:
             # grad_norms.append(self.compute_norm(grads[worker_.id]))
             delays.append(worker_.delay)
 
-        self.aggregate_gradients(pdw, pdd)
+            self.model.set_parameters(copy.deepcopy(worker_.model.parameters()))
+
+            self.update_queue()
+
+        #self.aggregate_gradients(pdw, pdd)
         loss /= batch_size
 
     def aggregate_gradients(self, pdw, pdd):

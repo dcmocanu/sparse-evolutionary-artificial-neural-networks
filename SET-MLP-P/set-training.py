@@ -8,20 +8,6 @@ from torch.utils.data import DataLoader, Sampler
 from parameter_server import *
 
 
-def shared_randomness_partitions(n, num_workers):
-    # remove last data point
-    dinds = list(range(n-1))
-    shuffle(dinds)
-    worker_size = (n-1) // num_workers
-
-    data = dict.fromkeys(list(range(num_workers)))
-
-    for w in range(num_workers):
-        data[w] = dinds[w * worker_size: (w+1) * worker_size]
-
-    return data
-
-
 # Training settings
 parser = argparse.ArgumentParser(description='SET Parallel Training ')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
@@ -55,7 +41,7 @@ parser.add_argument('--n-training-samples', type=int, default=2000, metavar='N',
                     help='Number of training samples')
 parser.add_argument('--n-testing-samples', type=int, default=1000, metavar='N',
                     help='Number of testing samples')
-parser.add_argument('--n-processes', type=int, default=8, metavar='N',
+parser.add_argument('--n-processes', type=int, default=15, metavar='N',
                     help='how many training processes to use (default: 2)')
 parser.add_argument('--cuda', action='store_true', default=False,
                     help='enables CUDA training')
@@ -115,14 +101,8 @@ if __name__ == "__main__":
 
         ps = ParameterServer(**config)
 
-        partitions = shared_randomness_partitions(len(ps.x_train), n_processes)
-        ps.partitions = partitions
-
         # initialize workers on the server
-        for id_ in range(n_processes):
-            ps.workers.append(Worker(parent=ps, id=id_, data=ps.x_train[partitions[id_]],
-                                     labels=ps.y_train[partitions[id_]],
-                                     batch_size=batch_size, model=ps.model))
+        ps.initiate_workers()
 
         ps.train()
 

@@ -1,7 +1,43 @@
 from set_mlp  import *
 import torch
 import types
+from torch.utils.data import DataLoader, Sampler
 import copy
+from torchvision import datasets, transforms, models
+
+
+class SubsetSequentialSampler(Sampler):
+    def __init__(self, indices):
+        self.indices = indices
+
+    def __iter__(self):
+        #         return (self.indices[i] for i in torch.randperm(len(self.indices)))
+        return (self.indices[i] for i in range(len(self.indices)))
+
+    def __len__(self):
+        return len(self.indices)
+
+
+def load_dataset(name='CIFAR10', location='dataset', train=True):
+    if name == 'CIFAR10':
+        dataset = datasets.CIFAR10(
+            location,
+            train=train,
+            download=True,
+            transform=transforms.Compose(
+                [transforms.ToTensor(),
+                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]))
+    else:
+        dataset = datasets.MNIST(
+            'data/MNIST',
+            train=train,
+            download=True,
+            transform=transforms.Compose(
+                [transforms.ToTensor(),
+                 transforms.Normalize((0.5,), (0.5,))]))
+
+    return dataset
+
 
 class Queue:
     def __init__(self, max_len):
@@ -26,61 +62,64 @@ class Queue:
         # i-th element in the queue is the i step delayed version of the param
         return self.queue[self.len - delay - 1]
 
+
 class Worker:
-    def __init__(self, model, id , parent):
+    def __init__(self, model, id, batch_size, parent, data, labels, delay=1):
 
         self.parent = parent
         self.id = id
-        self.delay = 1
-
+        self.delay = delay
         self.model = model
-
-        self.batch_size = model.batch_size
-
-        self.loss_function = MSE
+        self.batch_size = batch_size
+        self.loss_function = model.loss
         self.epoch = 0
+
+        self.data = data
+        self.labels = labels
 
     def get_next_mini_batch(self):
 
-        pass
+        data, labels = self.data, self.labels
+
+        return data, labels
 
     def get_server_weights(self):
 
         params = self.parent.queue.sample(self.delay)
-        for param_1, param_2 in zip(self.model.parameters(), params):
-            param_1.data = param_2.clone().detach().requires_grad_().data
+
+        self.model.set_parameters(params)
+
         del params
 
     def assign_weights(self, model):
         """
         Takes in a model and assigns the weights of the model to self.model.
-        Skipping the check for model and self.model belonging to the same nn.Module type.
         :param model:
         :return:
         """
-        for param_1, param_2 in zip(self.model.parameters(), model.parameters()):
-            param_1.data = param_2.data
+
+        self.model.set_parameters(model.parameters())
 
     def compute_gradients(self):
 
-        start_time = time.time()
         self.get_server_weights()
-        start_time = time.time()
 
         batchdata, batchlabels = self.get_next_mini_batch()     # passes to device already
-        start_time = time.time()
 
-        output = self.model.forward(batchdata)
+        z, a  = self.model._feed_forward(batchdata)
 
-        loss = self.loss_function(output, batchlabels)
-        self.model.zero_grad()
-        loss.backward()
+        self.model._back_prop(z, a, batchlabels)
+
+        accuracy, activations = self.model.predict(batchdata, batchlabels, batchlabels.shape[0])
+
+        loss = self.model.loss.loss(batchlabels, activations)
+
+        pdw = self.model.parameters()['pdw']
+        pdd = self.model.parameters()['pdd']
 
         # compute the gradients and return the list of gradients
+        return pdw, pdd, loss, batchlabels.shape[0]
 
-        self.nn_time_meter.update(time.time() - start_time, 1)
-
-        return [param.grad.data.cpu() for param in self.model.parameters()], loss.data, batchlabels.size(0)
 
 class ParameterServer:
     def __init__(self, **config):
@@ -91,45 +130,61 @@ class ParameterServer:
         self.epsilon = config['epsilon']  # control the sparsity level as discussed in the paper
         self.zeta = config['zeta']   # the fraction of the weights removed
         self.dropout_rate = config['dropout_rate']   # dropout rate
-        self.epoch = 0
         self.init_lr = config['lr']
         self.lr_schedule = 'decay'
-        self.lr = self.init_lr
-        self.decay = 0.0
+        self.decay = config['lr_decay']
         self.batch_size = config['batch_size']
         self.epochs = config['n_epochs']
         self.no_neurons = config['n_hidden_neurons']
+        self.n_training_samples = config['n_training_samples']
+        self.n_testing_samples = config['n_testing_samples']
+        self.num_workers = config['n_processes']
+
+        self.lr = self.init_lr
+        self.epoch = 0
 
         # server worker related parameters
         # location, foldername added new as compared to ParameterServer
         self.max_delay = 1
         self.queue = Queue(self.max_delay + 1)
-        self.num_workers = config['n_processes']
         self.workers = []
-        self.delaytype = 'const'
+        self.partitions = {}
+        self.delaytype = config['delay_type']
 
         # data loading
-        self.x_train, self.y_train, self.x_test, self.y_test = load_cifar10_data(2000, 1000)
+        self.x_train, self.y_train, self.x_test, self.y_test = load_cifar10_data(self.n_training_samples, self.n_testing_samples)
 
-        #self.train_loader = DataLoader(self.train_data, batch_size=10000, num_workers=8)
-        #self.test_loader = DataLoader(self.test_data, batch_size=10000, num_workers=8)
+        self.train_data = load_dataset()
 
-        # choosing model and loss function
+        # set model dimensions
         self.dimensions = (self.x_train.shape[1], self.no_neurons, self.no_neurons, self.no_neurons,
                               self.y_train.shape[1])
+
+        print("Number of neurons per layer:", self.x_train.shape[1], self.no_neurons, self.no_neurons, self.no_neurons,
+              self.y_train.shape[1])
+
+        # Instantiate master model
         self.model = SET_MLP(self.dimensions, (Relu, Relu, Relu, Sigmoid), **config)
         self.n_layers = len(self.dimensions)
 
-        # Functions to be called at init
-        #self.update_queue()
+        self.update_queue()
+
+    def initiate_workers(self):
+
+        for id_ in range(self.num_workers):
+            loader = DataLoader(self.train_data, batch_size=self.batch_size,
+                                sampler=SubsetSequentialSampler(self.partitions[id_]),
+                                num_workers=0)
+            self.workers.append(Worker(parent=self, id=id_, loader=loader,
+                                     batch_size=self.batch_size, model=self.model))
 
     def update_queue(self, reset=False):
         if reset:
             self.queue.queue = []
             self.queue.len = 0
-            self.queue.push([param.clone().detach().requires_grad_().cpu() for param in self.model.parameters()])
+            self.queue.push([copy.deepcopy(param) for _, param in self.model.parameters()])
         else:
-            self.queue.push([param.clone().detach().requires_grad_().cpu() for param in self.model.parameters()])
+            self.queue.push([copy.deepcopy(param) for _, param in self.model.parameters().items()])
 
     def lr_update(self, itr, epoch):
         if self.lr_schedule == 'const':
@@ -149,7 +204,7 @@ class ParameterServer:
             parameters = [parameters]
 
         for p in parameters:
-            param_norm = p.data.norm(2)
+            param_norm = parameters[p].norm(2)
             total_norm += param_norm.item() ** 2
         total_norm = total_norm ** (1. / 2)
         return total_norm
@@ -165,15 +220,14 @@ class ParameterServer:
         :return:
         """
 
-        if isinstance(parameters, torch.Tensor):
-            parameters = [parameters]
+        parameters = [parameters]
 
         total_norm = self.compute_norm(parameters)
         clip_coef = max_norm / (total_norm + 1e-6)
         if clip_coef < 1:
             if inplace:
                 for p in parameters:
-                    p.data.mul_(clip_coef)
+                    parameters[p] * clip_coef
                 return total_norm, parameters
             else:
                 if isinstance(parameters, types.GeneratorType):
@@ -181,18 +235,11 @@ class ParameterServer:
 
                 cp = copy.deepcopy(parameters)
                 for p in cp:
-                    p.data.mul_(clip_coef)
+                    parameters[p] * clip_coef
                 return total_norm, cp
         return total_norm, parameters
 
     def train(self, testing=True):
-        # Initiate the loss object with the final activation function
-        # self.save_filename = "Results/set_mlp_"+str(self.x_train[0])+"_training_samples_e"+str(self.epsilon)+"_rand"+str(1)
-        # self.inputLayerConnections = []
-        # self.inputLayerConnections.append(self.model.getCoreInputConnections())
-        # np.savez_compressed(self.save_filename + "_input_connections.npz",
-        #                     inputLayerConnections=self.inputLayerConnections)
-
         best_acc = 0
         metrics = np.zeros((self.epochs, 4))
         #num_iter_per_epoch = len(self.partitions[0])//self.batch_size + 1
@@ -209,7 +256,7 @@ class ParameterServer:
             y_ = self.y_train[seed]
 
             # try:
-            #     self.step()
+            self.step()
             # except Exception as e:
             #     # propagating exception
             #     print('exception in step ', e)
@@ -218,7 +265,7 @@ class ParameterServer:
             for j in range(self.x_train.shape[0] // self.batch_size):
                 k = j * self.batch_size
                 l = (j + 1) * self.batch_size
-                z, a = self.model._feed_forward(x_[k:l], True)
+                z, a = self.model._feed_forward(x_[k:l], False)
 
                 self.model._back_prop(z, a, y_[k:l])
 
@@ -227,8 +274,12 @@ class ParameterServer:
             print("Training time: ", step_time)
 
             running_itr += 1
+
+            # Update learning rate
             #self.lr_update(running_itr, epoch)
 
+            # test model performance on the test data at each epoch
+            # this part is useful to understand model performance and can be commented for production settings
             if testing:
                 print("epoch test loss")
                 start_time = time.time()
@@ -242,7 +293,7 @@ class ParameterServer:
                 train_time = time.time() - start_time
                 print("train time", train_time)
 
-                is_best = (accuracy_test > best_acc)
+                # is_best = (accuracy_test > best_acc)
                 best_acc = max(accuracy_test, best_acc)
 
                 loss_test = self.model.loss.loss(self.y_test, activations_test)
@@ -258,7 +309,8 @@ class ParameterServer:
 
     def step(self):
 
-        grads = {}
+        pdw = {}
+        pdd = {}
         loss = 0
         batch_size = 0
 
@@ -269,70 +321,76 @@ class ParameterServer:
 
         for worker_ in self.workers:
 
-            # worker_.get_server_weights()
-
-            grads[worker_.id], worker_loss, batch_size_ = worker_.compute_gradients()
-
-            # Check for nan values and exit the program. Also sends an email
-            for wg in grads[worker_.id]:
-                if torch.isnan(wg).any() or torch.isinf(wg).any():
-                    # self.nan_handler(msg=str(worker_.id) + 'grad')
-                    raise Exception('found Nan/Inf values')
-
-            if torch.isnan(worker_loss) or torch.isinf(worker_loss).any():
-                # self.nan_handler(msg=str(worker_.id) + 'loss')
-                raise Exception('found Nan/Inf values')
+            pdw[worker_.id], pdd[worker_.id], worker_loss, batch_size_ = worker_.compute_gradients()
 
             batch_size += batch_size_
             loss += worker_loss * batch_size_
 
             losses.append(worker_loss * batch_size)
-            grad_norms.append(self.compute_norm(grads[worker_.id]))
+            # grad_norms.append(self.compute_norm(grads[worker_.id]))
             delays.append(worker_.delay)
 
-        self.aggregate_gradients(grads)
+        self.aggregate_gradients(pdw, pdd)
         loss /= batch_size
 
-    def aggregate_gradients(self, grads):
+    def aggregate_gradients(self, pdw, pdd):
 
         # average gradients across all workers (includes cached gradients)
 
-        for id_ in range(1, len(grads)):
-            for param1, param2 in zip(grads[0], grads[id_]):
-                param1.data += param2.data
+        for id_ in range(1, len(pdw)):
+            for key, param in pdw[id_].items():
+                pdw[0][key] += param
 
-        for param in grads[0]:
-            param.data /= len(grads)
+        for _, param in pdw[0].items():
+            param /= len(pdw)
+
+        for id_ in range(1, len(pdd)):
+            for key, param in pdd[id_].items():
+                pdd[0][key] += param
+
+        for _, param in pdd[0].items():
+            param /= len(pdd)
 
         # norm_before_clip = nn.utils.clip_grad_norm_(grads[0], 1)
         # norm_before_clip = self.compute_norm(grads[0])
-        norm_before_clip, _ = self.clip_(grads[0], max_norm=1, inplace=True)
-        norm_after_clip = self.compute_norm(grads[0])
+        #norm_before_clip, _ = self.clip_(grads[0], max_norm=1, inplace=True)
+        #norm_after_clip = self.compute_norm(grads[0])
 
         # Assign grad data to model grad data. Update parameters of the model
-        for param1, param2 in zip(self.model.parameters(), grads[0]):
-            param1.data -= self.lr * param2.data
+        for (id1, param1), (id2, param2) in zip(pdw[0].items(), pdd[0].items()):
+            self.update_parameters(id1, param1, param2)
 
         self.update_queue()
 
+    def update_parameters(self, index, pdw, pdd):
+        """
+        Update weights and biases.
+
+        :param index: (int) Number of the layer
+        :param dw: (array) Partial derivatives
+        :param delta: (array) Delta error.
+        """
+
+        self.model.pdw[index] = pdw
+        self.model.pdd[index] = pdd
+
+        self.model.w[index] += self.model.pdw[index] - self.weight_decay * self.model.w[index]
+        self.model.b[index] += self.model.pdd[index] - self.weight_decay * self.model.b[index]
+
     def predict(self, x_test, y_test, batch_size=1):
 
-        """
-               :param x_test: (array) Test input
-               :param y_test: (array) Correct test output
-               :param batch_size:
-               :return: (flt) Classification accuracy
-               :return: (array) A 2D array of shape (n_cases, n_classes).
-               """
         activations = np.zeros((y_test.shape[0], y_test.shape[1]))
         for j in range(x_test.shape[0] // batch_size):
             k = j * batch_size
             l = (j + 1) * batch_size
             _, a_test = self.model._feed_forward(x_test[k:l])
             activations[k:l] = a_test[self.n_layers]
-        correctClassification = 0
+
+        correct_classification = 0
+
         for j in range(y_test.shape[0]):
-            if (np.argmax(activations[j]) == np.argmax(y_test[j])):
-                correctClassification += 1
-        accuracy = correctClassification / y_test.shape[0]
+            if np.argmax(activations[j]) == np.argmax(y_test[j]):
+                correct_classification += 1
+        accuracy = correct_classification / y_test.shape[0]
+
         return accuracy, activations

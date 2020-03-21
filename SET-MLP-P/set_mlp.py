@@ -190,6 +190,7 @@ class SET_MLP:
         self.n_layers = len(dimensions)
         self.learning_rate = config['lr']
         self.momentum = config['momentum']
+        self.epochs = config['n_epochs']
         self.weight_decay = config['weight_decay']
         self.epsilon = config['epsilon']  # control the sparsity level as discussed in the paper
         self.zeta = config['zeta']  # the fraction of the weights removed
@@ -228,6 +229,29 @@ class SET_MLP:
         print("Creation sparse weights time: ", t2 - t1)
 
         self.loss = MSE(self.activations[self.n_layers])
+
+    def parameters(self):
+        """
+                Retrieve the network parameters.
+                :return: model parameters.
+        """
+
+        params = {
+            'w': self.w,
+            'b': self.b,
+            'pdw': self.pdw,
+            'pdd': self.pdd,
+            'activations': self.activations
+        }
+
+        return params
+
+    def set_parameters(self, params):
+        self.w = params[0]
+        self.b = params[1]
+        self.pdw = params[2]
+        self.pdd = params[3]
+        self.activations = params[4]
 
     def _feed_forward(self, x, drop=False):
         """
@@ -314,7 +338,7 @@ class SET_MLP:
 
         # perform the update with momentum
         if (index not in self.pdw):
-            self.pdw[index] = -self.learning_rate * dw
+            self.pdw[index] = - self.learning_rate * dw
             self.pdd[index] = - self.learning_rate * np.mean(delta, 0)
         else:
             self.pdw[index] = self.momentum * self.pdw[index] - self.learning_rate * dw
@@ -323,43 +347,26 @@ class SET_MLP:
         self.w[index] += self.pdw[index] - self.weight_decay * self.w[index]
         self.b[index] += self.pdd[index] - self.weight_decay * self.b[index]
 
-    def fit(self, x, y_true, x_test, y_test, loss, epochs, batch_size, learning_rate=1e-3, momentum=0.9,
-            weight_decay=0.0002, zeta=0.3, dropoutrate=0, testing=True, save_filename=""):
+    def fit(self, x, y_true, x_test, y_test, batch_size=128, testing=True, save_filename=""):
         """
         :param x: (array) Containing parameters
         :param y_true: (array) Containing one hot encoded labels.
-        :param loss: Loss class (MSE, CrossEntropy etc.)
-        :param epochs: (int) Number of epochs.
-        :param batch_size: (int)
-        :param learning_rate: (flt)
-        :param momentum: (flt)
-        :param weight_decay: (flt)
-        :param zeta: (flt) #control the fraction of weights removed
-        :param droprate: (flt)
         :return (array) A 2D array of metrics (epochs, 3).
         """
         if not x.shape[0] == y_true.shape[0]:
             raise ValueError("Length of x and y arrays don't match")
 
         # Initiate the loss object with the final activation function
-        self.loss = loss(self.activations[self.n_layers])
-        self.learning_rate = 0.05
-        self.momentum = 0.9
-        self.weight_decay = 0.0002
-        self.zeta = 0.3
-        self.dropout_rate = 0.2
         self.save_filename = save_filename
-        self.batchSize = batch_size
         self.inputLayerConnections = []
         self.inputLayerConnections.append(self.getCoreInputConnections())
         np.savez_compressed(self.save_filename + "_input_connections.npz",
                             inputLayerConnections=self.inputLayerConnections)
 
         maximum_accuracy = 0
+        metrics = np.zeros((self.epochs, 4))
 
-        metrics = np.zeros((epochs, 4))
-
-        for i in range(epochs):
+        for i in range(self.epochs):
             # Shuffle the data
             seed = np.arange(x.shape[0])
             np.random.shuffle(seed)
@@ -385,8 +392,8 @@ class SET_MLP:
             # this part is useful to understand model performance and can be commented for production settings
             if (testing):
                 t3 = datetime.datetime.now()
-                accuracy_test, activations_test = self.predict(x_test, y_test, self.batchSize)
-                accuracy_train, activations_train = self.predict(x, y_true, self.batchSize)
+                accuracy_test, activations_test = self.predict(x_test, y_test, batch_size)
+                accuracy_train, activations_train = self.predict(x, y_true, batch_size)
                 t4 = datetime.datetime.now()
                 maximum_accuracy = max(maximum_accuracy, accuracy_test)
                 loss_test = self.loss.loss(y_test, activations_test)
@@ -399,7 +406,8 @@ class SET_MLP:
                       "; Maximum accuracy test: ", maximum_accuracy)
 
             t5 = datetime.datetime.now()
-            if (i < epochs - 1):  # do not change connectivity pattern after the last epoch
+            if (i < self.epochs - 1):  # do not change connectivity pattern after the last epoch
+
                 # self.weightsEvolution_I() #this implementation is more didactic, but slow.
                 self.weightsEvolution_II()  # this implementation has the same behaviour as the one above, but it is much faster.
             t6 = datetime.datetime.now()

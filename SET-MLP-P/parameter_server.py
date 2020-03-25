@@ -1,16 +1,18 @@
 from set_mlp  import *
-import torch
 import types
-from torch.utils.data import DataLoader
 from random import Random, shuffle
 import copy
+import random
+import time
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+import multiprocessing as mp
 
 
 def shared_randomness_partitions(n, num_workers):
     # remove last data point
-    dinds = list(range(n-1))
-    shuffle(dinds)
-    worker_size = (n-1) // num_workers
+    dinds = list(range(n))
+    #shuffle(dinds)
+    worker_size = (n) // num_workers
 
     data = dict.fromkeys(list(range(num_workers)))
 
@@ -79,11 +81,13 @@ class Worker:
         :return:
         """
 
-        self.model.set_parameters(model.parameters())
+        self.model.set_parameters(copy.deepcopy(model.parameters()))
 
-    def compute_gradients(self):
+    def compute_gradients(self, data=None, label=None):
 
-        self.get_server_weights()
+        #time.sleep(self.id)
+        #self.get_server_weights()
+        self.assign_weights(self.parent.model)
 
         batchdata, batchlabels = self.get_next_mini_batch()     # passes to device already
 
@@ -97,6 +101,8 @@ class Worker:
 
         pdw = self.model.parameters()['pdw']
         pdd = self.model.parameters()['pdd']
+
+        self.parent.model.set_parameters(copy.deepcopy(self.model.parameters()))
 
         # compute the gradients and return the list of gradients
         return pdw, pdd, loss, batchlabels.shape[0]
@@ -147,11 +153,14 @@ class ParameterServer:
         self.n_layers = len(self.dimensions)
         self.config = config
 
+        self.num_workers = self.x_train.shape[0] // self.batch_size
+
         self.update_queue()
 
     def initiate_workers(self):
         self.partitions = shared_randomness_partitions(len(self.x_train), self.num_workers)
         # initialize workers on the server
+        self.workers = []
         for id_ in range(self.num_workers):
             self.workers.append(Worker(parent=self, id=id_, data=self.x_train[self.partitions[id_]],
                                      labels=self.y_train[self.partitions[id_]],
@@ -179,8 +188,6 @@ class ParameterServer:
 
     def compute_norm(self, parameters):
         total_norm = 0
-        if isinstance(parameters, torch.Tensor):
-            parameters = [parameters]
 
         for p in parameters:
             param_norm = parameters[p].norm(2)
@@ -218,7 +225,7 @@ class ParameterServer:
                 return total_norm, cp
         return total_norm, parameters
 
-    def train(self, testing=True):
+    def train(self, testing=False):
         best_acc = 0
         metrics = np.zeros((self.epochs, 4))
         #num_iter_per_epoch = len(self.partitions[0])//self.batch_size + 1
@@ -229,37 +236,59 @@ class ParameterServer:
             self.epoch = epoch
             print("\nSET-MLP Epoch ", epoch)
             start_time = time.time()
+
             # Shuffle the data
             seed = np.arange(self.x_train.shape[0])
             np.random.shuffle(seed)
             self.x_train = self.x_train[seed]
             self.y_train = self.y_train[seed]
 
-            # try:
+            # 1. Parallel training (WIP)
             self.step()
-            # except Exception as e:
-            #     # propagating exception
-            #     print('exception in step ', e)
-            #     raise e
 
+            # 2.1 Sequential training with workers (OK)
+            # pdd = {}
+            # pdw = {}
+            # for j in range(self.x_train.shape[0] // self.batch_size):
+            #    k = j * self.batch_size
+            #    l = (j + 1) * self.batch_size
+            #    self.workers[j].data = self.x_train[k:l]
+            #    self.workers[j].labels = self.y_train[k:l]
+            #
+            #    pdw[self.workers[j].id], pdd[self.workers[j].id], worker_loss, batch_size_ = self.workers[j].compute_gradients()
+            #
+            #    self.model.set_parameters(copy.deepcopy(self.workers[j].model.parameters()))
+
+            # 2.2 Sequential training with workers (OK)
+            # partitions = shared_randomness_partitions(len(self.x_train), self.num_workers)
+            # self.partitions = partitions
+            # for worker_ in self.workers:
+            #     worker_.data = self.x_train[self.partitions[worker_.id]]
+            #     worker_.labels = self.y_train[self.partitions[worker_.id]]
+            #
+            #     pdw[worker_.id], pdd[worker_.id], worker_loss, batch_size_ = worker_.compute_gradients()
+            #
+            #     self.model.set_parameters(copy.deepcopy(worker_.model.parameters()))
+
+            # 3. Classic training (OK)
             # for j in range(self.x_train.shape[0] // self.batch_size):
             #     k = j * self.batch_size
             #     l = (j + 1) * self.batch_size
-            #     z, a = self.model._feed_forward(x_[k:l], False)
+            #     z, a = self.model._feed_forward(self.x_train[k:l], False)
             #
-            #     self.model._back_prop(z, a, y_[k:l])
-            #
+            #     self.model._back_prop(z, a, self.y_train[k:l])
+
             step_time = time.time() - start_time
             print("Training time: ", step_time)
 
             running_itr += 1
 
             # Update learning rate
-            #self.lr_update(running_itr, epoch)
+            # self.lr_update(running_itr, epoch)
 
             # test model performance on the test data at each epoch
             # this part is useful to understand model performance and can be commented for production settings
-            if testing:
+            if True:
                 print("epoch test loss")
                 start_time = time.time()
                 accuracy_test, activations_test = self.model.predict(self.x_test, self.y_test, self.batch_size)
@@ -285,7 +314,7 @@ class ParameterServer:
                       "; Accuracy test: ", accuracy_test, "; Maximum accuracy test: ", best_acc)
 
             t5 = datetime.datetime.now()
-            if (epoch < self.epochs - 1):  # do not change connectivity pattern after the last epoch
+            if epoch < self.epochs - 1:  # do not change connectivity pattern after the last epoch
 
                 # self.weightsEvolution_I() #this implementation is more didactic, but slow.
                 self.model.weightsEvolution_II()  # this implementation has the same behaviour as the one above, but it is much faster.
@@ -298,37 +327,26 @@ class ParameterServer:
 
         pdw = {}
         pdd = {}
-        loss = 0
-        batch_size = 0
 
-        delays = []
-        grad_norms = []
-        losses = []
-        start_time = time.time()
+        # self.initiate_workers()
+        # for j in range(self.x_train.shape[0] // self.batch_size):
+        #     k = j * self.batch_size
+        #     l = (j + 1) * self.batch_size
+        #     with ThreadPoolExecutor() as executor:
+        #         results = executor.map(Worker.compute_gradients, self.workers,
+        #                                self.x_train[k:l],
+        #                                self.y_train[k:l])
+        #         for i, res in enumerate(results):
+        #             pdw[i] = res[0]
+        #             pdd[i] = res[1]
+        #             losses.append(res[2])
 
-        partitions = shared_randomness_partitions(len(self.x_train), self.num_workers)
-        self.partitions = partitions
-
-        for worker_ in self.workers:
-
-            worker_.data = self.x_train[self.partitions[worker_.id]]
-            worker_.labels = self.y_train[self.partitions[worker_.id]]
-
-            pdw[worker_.id], pdd[worker_.id], worker_loss, batch_size_ = worker_.compute_gradients()
-
-            batch_size += batch_size_
-            loss += worker_loss * batch_size_
-
-            losses.append(worker_loss * batch_size)
-            # grad_norms.append(self.compute_norm(grads[worker_.id]))
-            delays.append(worker_.delay)
-
-            self.model.set_parameters(copy.deepcopy(worker_.model.parameters()))
-
-            self.update_queue()
-
-        #self.aggregate_gradients(pdw, pdd)
-        loss /= batch_size
+        with ThreadPoolExecutor() as executor:
+            results = executor.map(Worker.compute_gradients, self.workers)
+            for i, res in enumerate(results):
+                pdw[i] = res[0]
+                pdd[i] = res[1]
+        # self.aggregate_gradients(pdw, pdd)
 
     def aggregate_gradients(self, pdw, pdd):
 
@@ -357,7 +375,7 @@ class ParameterServer:
         for (id1, param1), (id2, param2) in zip(pdw[0].items(), pdd[0].items()):
             self.update_parameters(id1, param1, param2)
 
-        self.update_queue()
+        #self.update_queue()
 
     def update_parameters(self, index, pdw, pdd):
         """

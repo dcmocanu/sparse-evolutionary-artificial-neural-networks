@@ -4,9 +4,12 @@ import time
 import argparse
 import random
 from random import Random, shuffle
-from torch.utils.data import DataLoader, Sampler
 from parameter_server import *
+import os
 
+# **** change the warning level ****
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 # Training settings
 parser = argparse.ArgumentParser(description='SET Parallel Training ')
@@ -37,11 +40,11 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
-parser.add_argument('--n-training-samples', type=int, default=10000, metavar='N',
+parser.add_argument('--n-training-samples', type=int, default=5000, metavar='N',
                     help='Number of training samples')
 parser.add_argument('--n-testing-samples', type=int, default=1000, metavar='N',
                     help='Number of testing samples')
-parser.add_argument('--n-processes', type=int, default=20, metavar='N',
+parser.add_argument('--n-processes', type=int, default=15, metavar='N',
                     help='how many training processes to use (default: 2)')
 parser.add_argument('--cuda', action='store_true', default=False,
                     help='enables CUDA training')
@@ -104,7 +107,10 @@ if __name__ == "__main__":
         # initialize workers on the server
         ps.initiate_workers()
 
+        start_time = time.time()
         ps.train()
+        step_time = time.time() - start_time
+        print("\nTotal training time: ", step_time)
 
         # test SET-MLP
         accuracy, _ = ps.predict(X_test, Y_test, batch_size=1)

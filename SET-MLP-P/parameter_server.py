@@ -244,7 +244,7 @@ class ParameterServer:
             self.y_train = self.y_train[seed]
 
             # 1. Parallel training (WIP)
-            self.step()
+            #self.step()
 
             # 2.1 Sequential training with workers (OK)
             # pdd = {}
@@ -271,12 +271,12 @@ class ParameterServer:
             #     self.model.set_parameters(copy.deepcopy(worker_.model.parameters()))
 
             # 3. Classic training (OK)
-            # for j in range(self.x_train.shape[0] // self.batch_size):
-            #     k = j * self.batch_size
-            #     l = (j + 1) * self.batch_size
-            #     z, a = self.model._feed_forward(self.x_train[k:l], False)
-            #
-            #     self.model._back_prop(z, a, self.y_train[k:l])
+            for j in range(self.x_train.shape[0] // self.batch_size):
+                k = j * self.batch_size
+                l = (j + 1) * self.batch_size
+                z, a = self.model._feed_forward(self.x_train[k:l], False)
+
+                self.model._back_prop(z, a, self.y_train[k:l])
 
             step_time = time.time() - start_time
             print("Training time: ", step_time)

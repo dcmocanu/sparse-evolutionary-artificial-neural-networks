@@ -42,10 +42,14 @@ import datetime
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import multiprocessing as mp
+import os
+import sys
+stderr = sys.stderr
+sys.stderr = open(os.devnull, 'w')
+import keras
 from keras.datasets import cifar10
 from keras.utils import np_utils
-from keras.preprocessing.image import ImageDataGenerator
-
+sys.stderr = stderr
 
 def backpropagation_updates_Numpy(a, delta, rows, cols, out):
     for i in range(out.shape[0]):

@@ -42,24 +42,23 @@ x_train = x_train.astype('float32')
 x_test = x_test.astype('float32')
 
 for index, image in enumerate(x_train):
-    if index>26312:
-        total = 0
-        # plt.imshow(image.astype(np.uint8))
-        # plt.show()
-        # construct the actual Python generator
-        print("[INFO] generating images..." + str(index))
-        imageGen = datagen.flow(image.reshape((1, 32, 32, 3)), batch_size=1, save_to_dir="dataset/class_" + str(y_train[index][0]),
-                                save_prefix="aug_" + str(y_train[index][0]), save_format="jpg")
+    total = 0
+    # plt.imshow(image.astype(np.uint8))
+    # plt.show()
+    # construct the actual Python generator
+    print("[INFO] generating images..." + str(index))
+    imageGen = datagen.flow(image.reshape((1, 32, 32, 3)), batch_size=1, save_to_dir="cifar10/class_" + str(y_train[index][0]),
+                          save_prefix="aug_" + str(index), save_format="jpg")
 
-        # loop over examples from our image data augmentation generator
-        for image in imageGen:
-            # increment our counter
-            total += 1
-            # plt.imshow(image.reshape((32, 32, 3)).astype(np.uint8))
-            # plt.show()
-            # if we have reached the specified number of examples, break
-            # from the loop
-            if total == 100:
-                break
-            time.sleep(0.001)
-        time.sleep(0.01)
+    # loop over examples from our image data augmentation generator
+    for image in imageGen:
+        # increment our counter
+        total += 1
+        # plt.imshow(image.reshape((32, 32, 3)).astype(np.uint8))
+        # plt.show()
+        # if we have reached the specified number of examples, break
+        # from the loop
+        if total == 20:
+            break
+        # time.sleep(0.001)
+    time.sleep(0.01)

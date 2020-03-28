@@ -51,6 +51,7 @@ from keras.datasets import cifar10
 from keras.utils import np_utils
 sys.stderr = stderr
 
+
 def backpropagation_updates_Numpy(a, delta, rows, cols, out):
     for i in range(out.shape[0]):
         s = 0
@@ -257,7 +258,7 @@ class SET_MLP:
         self.pdd = params['pdd']
         self.activations = params['activations']
 
-    def _feed_forward(self, x, drop=False):
+    def _feed_forward(self, x, drop=True):
         """
         Execute a forward feed through the network.
         :param x: (array) Batch of input data vectors.
@@ -646,5 +647,4 @@ def load_cifar10_data(noTrainingSamples,noTestingSamples):
     x_train = x_train.reshape(-1, 32 * 32 * 3).astype('float64')
     x_test = x_test.reshape(-1, 32 * 32 * 3).astype('float64')
     return x_train, y_train, x_test, y_test
-
 

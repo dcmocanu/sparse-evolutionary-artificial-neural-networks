@@ -6,44 +6,22 @@ import random
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import multiprocessing as mp
+from multiprocessing import Pool
+from pathos.multiprocessing import ProcessingPool
 
 
-def shared_randomness_partitions(n, num_workers):
+def shared_randomness_partitions(n, num_workers, batch_size):
     # remove last data point
     dinds = list(range(n))
-    #shuffle(dinds)
-    worker_size = (n) // num_workers
+    num_batches = n // batch_size
+    worker_size = num_batches // num_workers
 
     data = dict.fromkeys(list(range(num_workers)))
 
     for w in range(num_workers):
-        data[w] = dinds[w * worker_size: (w+1) * worker_size]
+        data[w] = dinds[w * batch_size * worker_size: (w+1) * batch_size * worker_size]
 
     return data
-
-
-class Queue:
-    def __init__(self, max_len):
-        self.queue = list()
-        self.maxlen = max_len
-        self.len = 0
-
-    def push(self, grad):
-
-        if self.len < self.maxlen:
-            self.queue.append(grad)
-            self.len += 1
-        else:
-            ret = self.queue.pop(0)
-            self.queue.append(grad)
-
-    def sample(self, delay):
-
-        if delay >= self.len:
-            return self.queue[0]
-        # print(delay)
-        # i-th element in the queue is the i step delayed version of the param
-        return self.queue[self.len - delay - 1]
 
 
 class Worker:
@@ -54,7 +32,6 @@ class Worker:
         self.delay = delay
         self.model = model
         self.batch_size = batch_size
-        self.loss_function = model.loss
         self.epoch = 0
 
         self.data = data
@@ -83,33 +60,47 @@ class Worker:
 
         self.model.set_parameters(copy.deepcopy(model.parameters()))
 
-    def compute_gradients(self, data=None, label=None):
 
-        #time.sleep(self.id)
-        #self.get_server_weights()
-        self.assign_weights(self.parent.model)
+def train(worker):
+    print(f"Starting training for worker {worker.id} ...")
 
-        batchdata, batchlabels = self.get_next_mini_batch()     # passes to device already
+    for epoch in range(10):
+        # Shuffle the data
+        seed = np.arange(worker.data.shape[0])
+        np.random.shuffle(seed)
+        worker.data = worker.data[seed]
+        worker.labels = worker.labels[seed]
 
-        z, a  = self.model._feed_forward(batchdata)
+        for j in range(worker.data.shape[0] // worker.batch_size):
+            k = j * worker.batch_size
+            l = (j + 1) * worker.batch_size
+            z, a = worker.model._feed_forward(worker.data[k:l], False)
+            worker.model._back_prop(z, a, worker.labels[k:l])
+    w = worker.model.parameters()['w']
+    b = worker.model.parameters()['b']
+    pdw = worker.model.parameters()['pdw']
+    pdd = worker.model.parameters()['pdd']
 
-        self.model._back_prop(z, a, batchlabels)
+    # compute the gradients and return the list of gradients
+    print(f"Finished training for worker {worker.id} ...")
+    return w, b, pdw, pdd
 
-        accuracy, activations = self.model.predict(batchdata, batchlabels, batchlabels.shape[0])
 
-        loss = self.model.loss.loss(batchlabels, activations)
+def compute_gradients(model, data, labels):
 
-        pdw = self.model.parameters()['pdw']
-        pdd = self.model.parameters()['pdd']
+    batchdata, batchlabels = data, labels    # passes to device already
 
-        self.parent.model.set_parameters(copy.deepcopy(self.model.parameters()))
+    z, a = model._feed_forward(batchdata)
+    model._back_prop(z, a, batchlabels)
 
-        # compute the gradients and return the list of gradients
-        return pdw, pdd, loss, batchlabels.shape[0]
+    pdw = model.parameters()['pdw']
+    pdd = model.parameters()['pdd']
+
+    return pdw, pdd
 
 
 class ParameterServer:
-    def __init__(self, **config):
+    def __init__(self, X_train, Y_train, X_test, Y_test, **config):
 
         #  Training related
         self.momentum = config['momentum']
@@ -139,11 +130,12 @@ class ParameterServer:
         self.delaytype = config['delay_type']
 
         # data loading
-        self.x_train, self.y_train, self.x_test, self.y_test = load_cifar10_data(self.n_training_samples, self.n_testing_samples)
+        self.x_train, self.y_train, self.x_test, self.y_test = X_train, Y_train, X_test, Y_test
 
         # set model dimensions
-        self.dimensions = (self.x_train.shape[1], self.no_neurons, self.no_neurons, self.no_neurons,
-                              self.y_train.shape[1])
+        self.dimensions = (self.x_train.shape[1],
+                           self.no_neurons, self.no_neurons, self.no_neurons,
+                           self.y_train.shape[1])
 
         print("Number of neurons per layer:", self.x_train.shape[1], self.no_neurons, self.no_neurons, self.no_neurons,
               self.y_train.shape[1])
@@ -153,12 +145,12 @@ class ParameterServer:
         self.n_layers = len(self.dimensions)
         self.config = config
 
-        self.num_workers = self.x_train.shape[0] // self.batch_size
+        self.num_workers = 8
 
         self.update_queue()
 
     def initiate_workers(self):
-        self.partitions = shared_randomness_partitions(len(self.x_train), self.num_workers)
+        self.partitions = shared_randomness_partitions(len(self.x_train), self.num_workers, self.batch_size)
         # initialize workers on the server
         self.workers = []
         for id_ in range(self.num_workers):
@@ -225,10 +217,10 @@ class ParameterServer:
                 return total_norm, cp
         return total_norm, parameters
 
-    def train(self, testing=False):
+    def train(self, testing=True):
         best_acc = 0
         metrics = np.zeros((self.epochs, 4))
-        #num_iter_per_epoch = len(self.partitions[0])//self.batch_size + 1
+        # num_iter_per_epoch = len(self.partitions[0])//self.batch_size + 1
         running_itr = 0
 
         for epoch in range(self.epochs):
@@ -244,7 +236,7 @@ class ParameterServer:
             self.y_train = self.y_train[seed]
 
             # 1. Parallel training (WIP)
-            #self.step()
+            self.step()
 
             # 2.1 Sequential training with workers (OK)
             # pdd = {}
@@ -260,6 +252,10 @@ class ParameterServer:
             #    self.model.set_parameters(copy.deepcopy(self.workers[j].model.parameters()))
 
             # 2.2 Sequential training with workers (OK)
+            # pdd = {}
+            # pdw = {}
+            # self.num_workers = self.x_train.shape[0] // self.batch_size
+            # self.initiate_workers()
             # partitions = shared_randomness_partitions(len(self.x_train), self.num_workers)
             # self.partitions = partitions
             # for worker_ in self.workers:
@@ -271,12 +267,13 @@ class ParameterServer:
             #     self.model.set_parameters(copy.deepcopy(worker_.model.parameters()))
 
             # 3. Classic training (OK)
-            for j in range(self.x_train.shape[0] // self.batch_size):
-                k = j * self.batch_size
-                l = (j + 1) * self.batch_size
-                z, a = self.model._feed_forward(self.x_train[k:l], False)
-
-                self.model._back_prop(z, a, self.y_train[k:l])
+            # for j in range(self.x_train.shape[0] // self.batch_size):
+            #     k = j * self.batch_size
+            #     l = (j + 1) * self.batch_size
+            #     z, a = self.model._feed_forward(self.x_train[k:l], False)
+            #
+            #     self.model._back_prop(z, a, self.y_train[k:l])
+            #self.model.lr = min(0.5, self.lr * 5)
 
             step_time = time.time() - start_time
             print("Training time: ", step_time)
@@ -288,7 +285,7 @@ class ParameterServer:
 
             # test model performance on the test data at each epoch
             # this part is useful to understand model performance and can be commented for production settings
-            if True:
+            if testing:
                 print("epoch test loss")
                 start_time = time.time()
                 accuracy_test, activations_test = self.model.predict(self.x_test, self.y_test, self.batch_size)
@@ -316,7 +313,7 @@ class ParameterServer:
             t5 = datetime.datetime.now()
             if epoch < self.epochs - 1:  # do not change connectivity pattern after the last epoch
 
-                # self.weightsEvolution_I() #this implementation is more didactic, but slow.
+                # self.weightsEvolution_I() # this implementation is more didactic, but slow.
                 self.model.weightsEvolution_II()  # this implementation has the same behaviour as the one above, but it is much faster.
             t6 = datetime.datetime.now()
             print("Weights evolution time ", t6 - t5)
@@ -324,33 +321,45 @@ class ParameterServer:
         print("training completed")
 
     def step(self):
+        w = []
+        b = []
+        pdw = []
+        pdd = []
+        self.partitions = shared_randomness_partitions(len(self.x_train), self.num_workers, self.batch_size)
+        for worker in self.workers:
+            worker.data = self.x_train[self.partitions[worker.id]]
+            worker.labels = self.y_train[self.partitions[worker.id]]
+            worker.assign_weights(self.model)
 
-        pdw = {}
-        pdd = {}
-
-        # self.initiate_workers()
-        # for j in range(self.x_train.shape[0] // self.batch_size):
-        #     k = j * self.batch_size
-        #     l = (j + 1) * self.batch_size
-        #     with ThreadPoolExecutor() as executor:
-        #         results = executor.map(Worker.compute_gradients, self.workers,
-        #                                self.x_train[k:l],
-        #                                self.y_train[k:l])
-        #         for i, res in enumerate(results):
-        #             pdw[i] = res[0]
-        #             pdd[i] = res[1]
-        #             losses.append(res[2])
-
-        with ThreadPoolExecutor() as executor:
-            results = executor.map(Worker.compute_gradients, self.workers)
+        with ProcessPoolExecutor() as executor:
+            results = executor.map(train, self.workers)
             for i, res in enumerate(results):
-                pdw[i] = res[0]
-                pdd[i] = res[1]
-        # self.aggregate_gradients(pdw, pdd)
+                w.append(res[0])
+                b.append(res[1])
+                pdw.append(res[2])
+                pdd.append(res[3])
 
-    def aggregate_gradients(self, pdw, pdd):
+        # for worker in self.workers:
+        #     worker.model.lr = min(0.5, self.lr*10)
+        self.aggregate_parameters(w, b, pdw, pdd)
+
+    def aggregate_parameters(self, w, b, pdw, pdd):
 
         # average gradients across all workers (includes cached gradients)
+
+        for id_ in range(1, len(w)):
+            for key, param in w[id_].items():
+                w[0][key] += param
+
+        for _, param in w[0].items():
+            param /= len(w)
+
+        for id_ in range(1, len(b)):
+            for key, param in b[id_].items():
+                b[0][key] += param
+
+        for _, param in b[0].items():
+            param /= len(b)
 
         for id_ in range(1, len(pdw)):
             for key, param in pdw[id_].items():
@@ -366,31 +375,24 @@ class ParameterServer:
         for _, param in pdd[0].items():
             param /= len(pdd)
 
-        # norm_before_clip = nn.utils.clip_grad_norm_(grads[0], 1)
-        # norm_before_clip = self.compute_norm(grads[0])
-        #norm_before_clip, _ = self.clip_(grads[0], max_norm=1, inplace=True)
-        #norm_after_clip = self.compute_norm(grads[0])
-
         # Assign grad data to model grad data. Update parameters of the model
-        for (id1, param1), (id2, param2) in zip(pdw[0].items(), pdd[0].items()):
-            self.update_parameters(id1, param1, param2)
+        for (id1, param1), (id2, param2), (id3, param3), (id4, param4)\
+                in zip(w[0].items(), b[0].items(), pdw[0].items(), pdd[0].items()):
+            self.model.w[id1] = param1
+            self.model.b[id2] = param2
+            self.model.pdw[id3] = param3
+            self.model.pdd[id4] = param4
 
-        #self.update_queue()
-
-    def update_parameters(self, index, pdw, pdd):
+    def update_parameters(self, index, w, b, pdw, pdd):
         """
         Update weights and biases.
-
-        :param index: (int) Number of the layer
-        :param dw: (array) Partial derivatives
-        :param delta: (array) Delta error.
         """
 
         self.model.pdw[index] = pdw
         self.model.pdd[index] = pdd
 
-        self.model.w[index] += self.model.pdw[index] - self.weight_decay * self.model.w[index]
-        self.model.b[index] += self.model.pdd[index] - self.weight_decay * self.model.b[index]
+        self.model.w[index] += w
+        self.model.b[index] += b
 
     def predict(self, x_test, y_test, batch_size=1):
 

@@ -12,7 +12,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 # Training settings
 parser = argparse.ArgumentParser(description='SET Parallel Training ')
-parser.add_argument('--batch-size', type=int, default=128, metavar='N',
+parser.add_argument('--batch-size', type=int, default=256, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=3000, metavar='N',
                     help='input batch size for testing (default: 1000)')
@@ -39,18 +39,18 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
-parser.add_argument('--n-training-samples', type=int, default=100000, metavar='N',
+parser.add_argument('--n-training-samples', type=int, default=50000, metavar='N',
                     help='Number of training samples')
 parser.add_argument('--n-testing-samples', type=int, default=10000, metavar='N',
                     help='Number of testing samples')
-parser.add_argument('--n-processes', type=int, default=15, metavar='N',
+parser.add_argument('--n-processes', type=int, default=12, metavar='N',
                     help='how many training processes to use (default: 2)')
 parser.add_argument('--cuda', action='store_true', default=False,
                     help='enables CUDA training')
 
-
+# Augmented dataset path
 cur_dir = os.path.dirname(os.path.abspath(__file__))
-path_to_data = ['cifar10']
+path_to_data = ['dataset']
 images_dirs = os.path.join(cur_dir, *path_to_data)
 
 
@@ -61,9 +61,9 @@ def load_images(curr_dir, label):
     x_train = []
     y_train = []
 
-    # iterate through the names of contents of the folder
+    # Iterate through the images in the given the folder
     for image_path in os.listdir(class_dir):
-        # create the full input path and read the file
+        # Create the full input path and read the file
         input_path = os.path.join(class_dir, image_path)
         image = Image.open(input_path)
         x_train.append(np.asarray(image))
@@ -83,7 +83,7 @@ def load_augmented_cifar10_parallel(n_train_samples, n_test_samples):
     y_train = np.array([])
 
     # Loop through the data folders with training data
-    with ProcessPoolExecutor() as executor:
+    with ProcessPoolExecutor(max_workers=12) as executor:
         results = executor.map(load_images, class_dirs, range(10))
         for i, res in enumerate(results):
             x_train = np.concatenate((x_train, res[0]), axis=0)
@@ -101,12 +101,13 @@ def load_augmented_cifar10_parallel(n_train_samples, n_test_samples):
     index_test = np.arange(x_test.shape[0])
     np.random.shuffle(index_test)
 
+    # Sample dataset
     x_train = x_train[index_train[0:n_train_samples], :]
     y_train = y_train[index_train[0:n_train_samples], :]
     x_test = x_test[index_test[0:n_test_samples], :]
     y_test = y_test[index_test[0:n_test_samples], :]
 
-    # normalize data
+    # Normalize data
     x_train_mean = np.mean(x_train, axis=0)
     x_train_std = np.std(x_train, axis=0)
     x_train = (x_train - x_train_mean) / x_train_std
@@ -167,7 +168,7 @@ if __name__ == "__main__":
         # Load basic cifar10 dataset
         # X_train, Y_train, X_test, Y_test = load_cifar10_data(n_training_samples, n_testing_samples)
 
-        # create SET-MLP (MLP with adaptive sparse connectivity trained with Sparse Evolutionary Training)
+        # Create SET-MLP (MLP with adaptive sparse connectivity trained with Sparse Evolutionary Training)
         # print("Number of neurons per layer:", X_train.shape[1], n_hidden_neurons, n_hidden_neurons,
         # n_hidden_neurons, Y_train.shape[1])
         # Train SET
@@ -178,16 +179,18 @@ if __name__ == "__main__":
         #             save_filename="Results/set_mlp_" + str(n_training_samples) + "_training_samples_e" + str(
         #                 epsilon) + "_rand" + str(i))
 
-        ps = ParameterServer(**config)
+        # Instantiate parameter server
+        ps = ParameterServer(X_train, Y_train, X_test, Y_test, **config)
 
         # Initialize workers on the server
         ps.initiate_workers()
 
+        # Train SET model
         start_time = time.time()
         ps.train()
         step_time = time.time() - start_time
         print("\nTotal training time: ", step_time)
 
-        # test SET-MLP
+        # Test SET-MLP
         accuracy, _ = ps.predict(X_test, Y_test, batch_size=1)
         print("\nAccuracy of the last epoch on the testing data: ", accuracy)

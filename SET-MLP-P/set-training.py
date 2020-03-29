@@ -12,7 +12,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 # Training settings
 parser = argparse.ArgumentParser(description='SET Parallel Training ')
-parser.add_argument('--batch-size', type=int, default=512, metavar='N',
+parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=3000, metavar='N',
                     help='input batch size for testing (default: 1000)')
@@ -24,11 +24,11 @@ parser.add_argument('--lr-rate-decay', type=float, default=0.0, metavar='LRD',
                     help='learning rate decay (default: 0)')
 parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                     help='SGD momentum (default: 0.5)')
-parser.add_argument('--dropout-rate', type=float, default=0.2, metavar='D',
+parser.add_argument('--dropout-rate', type=float, default=0.3, metavar='D',
                     help='Dropout rate')
 parser.add_argument('--weight-decay', type=float, default=0.0002, metavar='W',
                     help='Dropout rate')
-parser.add_argument('--epsilon', type=int, default=13, metavar='E',
+parser.add_argument('--epsilon', type=int, default=20, metavar='E',
                     help='Sparsity level')
 parser.add_argument('--zeta', type=float, default=0.3, metavar='Z',
                     help='It gives the percentage of unimportant connections which are removed and replaced with '
@@ -39,7 +39,7 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
-parser.add_argument('--n-training-samples', type=int, default=500000, metavar='N',
+parser.add_argument('--n-training-samples', type=int, default=100000, metavar='N',
                     help='Number of training samples')
 parser.add_argument('--n-testing-samples', type=int, default=10000, metavar='N',
                     help='Number of testing samples')
@@ -50,7 +50,7 @@ parser.add_argument('--cuda', action='store_true', default=False,
 
 # Augmented dataset path
 cur_dir = os.path.dirname(os.path.abspath(__file__))
-path_to_data = ['cifar10']
+path_to_data = ['dataset']
 images_dirs = os.path.join(cur_dir, *path_to_data)
 
 

@@ -54,7 +54,7 @@ class Worker:
 def train(worker):
     print(f"Starting training for worker {worker.id} ...")
 
-    for epoch in range(10):
+    for epoch in range(1):
         # Shuffle the data
         seed = np.arange(worker.data.shape[0])
         np.random.shuffle(seed)
@@ -102,12 +102,9 @@ class ParameterServer:
         self.x_train, self.y_train, self.x_test, self.y_test = X_train, Y_train, X_test, Y_test
 
         # set model dimensions
-        self.dimensions = (self.x_train.shape[1],
-                           self.no_neurons, self.no_neurons, self.no_neurons,
-                           self.y_train.shape[1])
+        self.dimensions = (self.x_train.shape[1], 4000, 1000, 4000, self.y_train.shape[1])
 
-        print("Number of neurons per layer:", self.x_train.shape[1], self.no_neurons, self.no_neurons, self.no_neurons,
-              self.y_train.shape[1])
+        print("Number of neurons per layer:", self.x_train.shape[1], 4000, 1000, 4000, self.y_train.shape[1])
 
         # Instantiate master model
         self.model = SET_MLP(self.dimensions, (Relu, Relu, Relu, Sigmoid), **config)
@@ -213,6 +210,7 @@ class ParameterServer:
         print("training completed")
 
     def step(self):
+        #self.lr *= self.num_workers
         w = []
         b = []
         pdw = []

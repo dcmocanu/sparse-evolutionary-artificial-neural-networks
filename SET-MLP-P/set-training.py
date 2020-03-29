@@ -12,7 +12,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 # Training settings
 parser = argparse.ArgumentParser(description='SET Parallel Training ')
-parser.add_argument('--batch-size', type=int, default=256, metavar='N',
+parser.add_argument('--batch-size', type=int, default=512, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=3000, metavar='N',
                     help='input batch size for testing (default: 1000)')
@@ -39,18 +39,18 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
-parser.add_argument('--n-training-samples', type=int, default=50000, metavar='N',
+parser.add_argument('--n-training-samples', type=int, default=500000, metavar='N',
                     help='Number of training samples')
 parser.add_argument('--n-testing-samples', type=int, default=10000, metavar='N',
                     help='Number of testing samples')
-parser.add_argument('--n-processes', type=int, default=12, metavar='N',
+parser.add_argument('--n-processes', type=int, default=6, metavar='N',
                     help='how many training processes to use (default: 2)')
 parser.add_argument('--cuda', action='store_true', default=False,
                     help='enables CUDA training')
 
 # Augmented dataset path
 cur_dir = os.path.dirname(os.path.abspath(__file__))
-path_to_data = ['dataset']
+path_to_data = ['cifar10']
 images_dirs = os.path.join(cur_dir, *path_to_data)
 
 
@@ -141,8 +141,6 @@ if __name__ == "__main__":
         config = {
             'n_processes': n_processes,
             'n_epochs': n_epochs,
-            'delay': 1,
-            'delay_type': 'const',  # const or random
             'batch_size': batch_size,
             'dropout_rate': dropout_rate,
             'seed': i,

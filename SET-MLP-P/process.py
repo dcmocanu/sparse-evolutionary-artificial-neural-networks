@@ -2,6 +2,7 @@
 
 import os, sys, json
 import numpy as np
+import copy
 import socket
 import time
 import threading, queue
@@ -81,13 +82,8 @@ class MPIProcess(object):
         self.logger = get_logger()
 
         if self.process_comm is not None and self.process_comm.Get_size() > 1:
-            if self.model_builder.get_backend_name() == 'pytorch':
-                import horovod.torch as hvd
-            else:
-                import horovod.keras as hvd
             self.logger.debug("initializing horovod")
             self.process_comm.Barrier()
-            hvd.init(comm=self.process_comm)
             self.process_comm.Barrier()
             self.algo.worker_optimizer_builder.horovod_wrapper = True
 
@@ -160,16 +156,14 @@ class MPIProcess(object):
     def build_model(self, local_session=True):
         """Builds the Keras model and updates model-related attributes"""
         self.model = self.model_builder.build_model(local_session=local_session)
-        self.weights = self.model.get_weights()
-        self.compile_model()
-        self.weights = self.model.get_weights()
+        self.weights = copy.deepcopy(self.model.get_weights())
         self.update = self.model.format_update()
 
     def check_sanity(self):
         """Throws an exception if any model attribute has not been set yet."""
         for par in ['model',
                     # 'weights_shapes',
-                    'weights', 'update']:
+                    'weights']:
             if not hasattr(self, par) or getattr(self, par) is None:
                 raise Error("%s not found!  Process %s does not seem to be set up correctly." % (par, self.ranks))
 
@@ -213,6 +207,7 @@ class MPIProcess(object):
         self.algo.set_worker_model_weights(self.model, self.weights)
 
     def apply_update(self):
+        # self.logger.info(f'Apply update master {self.update}')
         """Updates weights according to update received from worker process"""
         with np.errstate(divide='raise',
                          invalid='raise',
@@ -279,6 +274,7 @@ class MPIProcess(object):
         # if tag in ['bool','time']:
         #    comm.Recv(obj, source=source, tag=tag_num, status=status )
         #    return obj
+
         if buffer:
             if type(obj) == list:
                 for o in obj:
@@ -334,6 +330,8 @@ class MPIProcess(object):
                     else:
                         comm.Send(o, dest=dest, tag=tag_num)
             else:
+                #self.logger.info(f'Send updae {self.update}')
+                #self.logger.info(f'Send updae {obj}')
                 comm.send(obj, dest=dest, tag=tag_num)
 
     def bcast(self, obj, root=0, buffer=False, comm=None):
@@ -384,12 +382,7 @@ class MPIProcess(object):
             self.send_time_step(comm=comm, dest=dest)
             decision = self.recv_bool(comm=comm, source=dest)
             if not decision: return
-        for o in obj:
-            if type(o) == list:
-                for w in o:
-                    self.send(w, tag, comm=comm, dest=dest, buffer=True)
-            else:
-                self.send(o, tag, comm=comm, dest=dest, buffer=True)
+        self.send(obj, tag, comm=comm, dest=dest, buffer=False)
 
     def send_weights(self, comm=None, dest=None, check_permission=False):
         if self.is_shadow(): return
@@ -427,12 +420,9 @@ class MPIProcess(object):
             for i in range(len(obj)):
                 obj[i] += tmp[i]
             return
-        for o in obj:
-            if type(o) == list:
-                for w in o:
-                    self.recv(w, tag, comm=comm, source=source, buffer=True)
-            else:
-                self.recv(o, tag, comm=comm, source=source, buffer=True)
+        #if tag =='update': self.logger.info(f'tmp {tag}')
+        #if tag =='update': self.logger.info(f'tmp {obj}')
+        return self.recv(obj, tag, comm=comm, source=source, buffer=False)
 
     def recv_weights(self, comm=None, source=None, add_to_existing=False):
         """Receive NN weights layer by layer from the process specified by comm and source"""
@@ -445,8 +435,9 @@ class MPIProcess(object):
             Add it to the current update if add_to_existing is True,
             otherwise overwrite the current update"""
         if self.is_shadow(): return
-        self.recv_arrays(self.update, tag='update', comm=comm, source=source,
+        self.update = self.recv_arrays(self.update, tag='update', comm=comm, source=source,
                          add_to_existing=add_to_existing)
+        #print(self.update)
 
     def recv_time_step(self, comm=None, source=None):
         """Receive the current time step"""
@@ -468,7 +459,7 @@ class MPIProcess(object):
     def bcast_weights(self, comm, root=0):
         """Broadcast weights shape and weights (layer by layer)
             on communicator comm from the indicated root rank"""
-        self.bcast(self.weights, comm=comm, root=root, buffer=True)
+        self.bcast(self.weights, comm=comm, root=root, buffer=False)
 
 
 class MPIWorker(MPIProcess):
@@ -494,7 +485,6 @@ class MPIWorker(MPIProcess):
         """Builds the Keras model and updates model-related attributes"""
 
         self.validation_model = self.model_builder.build_model()
-        self.algo.compile_model(self.validation_model)
         super(MPIWorker, self).build_model(local_session=False)
 
     def sync_with_parent(self):
@@ -522,7 +512,7 @@ class MPIWorker(MPIProcess):
         self.apply_update()
         self.algo.set_worker_model_weights(self.model, self.weights)
 
-    def train(self):
+    def train(self, testing=True):
         """Wait for the signal to train. Then train for num_epochs epochs.
             In each step, train on one batch of input data, then send the update to the master
             and wait to receive a new set of weights.  When done, send 'exit' signal to parent.
@@ -530,10 +520,14 @@ class MPIWorker(MPIProcess):
         Trace.begin("train")
         self.check_sanity()
 
+
+        self.logger.info("awaiting signal from parent")
         self.await_signal_from_parent()
 
         # periodically check this request to see if the parent has told us to stop training
         exit_request = self.recv_exit_from_parent()
+        self.logger.info(f"periodically check this request to see if the parent has told us to stop training {exit_request}")
+
         for epoch in range(1, self.num_epochs + 1):
             self.logger.info("Beginning epoch {:d}".format(self.epoch + epoch))
             Trace.begin("epoch")
@@ -544,6 +538,7 @@ class MPIWorker(MPIProcess):
 
             for i_batch, batch in enumerate(self.data.generate_data()):
                 if self.process_comm:
+                    self.logger.info("broadcast the weights to all processes")
                     ## broadcast the weights to all processes
                     ## alternative is to load the broadcast callback from horovod and call it here
                     self.bcast_weights(comm=self.process_comm)
@@ -553,6 +548,7 @@ class MPIWorker(MPIProcess):
                 Trace.begin("train_on_batch")
                 train_metrics = self.model.train_on_batch(x=batch[0], y=batch[1])
                 Trace.end("train_on_batch")
+                # self.logger.info(f'metrics {train_metrics[0]} {train_metrics[1]}')
                 if epoch_metrics.shape != train_metrics.shape:
                     epoch_metrics = np.zeros(train_metrics.shape)
                 epoch_metrics += train_metrics
@@ -568,11 +564,17 @@ class MPIWorker(MPIProcess):
                     break
                 if self._short_batches and i_batch > self._short_batches: break
 
+            if testing:
+                accuracy_test, activations_test = self.model.predict(self.data.x_test, self.data.y_test)
+                accuracy_train, activations_train = self.model.predict(self.data.x_train, self.data.y_train)
+                loss_test = self.model.compute_loss(self.data.y_test, activations_test)
+                loss_train = self.model.compute_loss(self.data.y_train, activations_train)
+                self.logger.info(f"Loss train: {loss_train}, Loss test: {loss_test}, Accuracy train: {accuracy_train}, Accuracy test: {accuracy_test}")
             if self.monitor:
                 self.monitor.stop_monitor()
             epoch_metrics = epoch_metrics / float(i_batch + 1)
-            l = self.model.get_logs(epoch_metrics)
-            self.update_history(l)
+            #l = self.model.get_logs(epoch_metrics)
+            #self.update_history(l)
             Trace.end("epoch")
 
             if self.stop_training:
@@ -586,7 +588,7 @@ class MPIWorker(MPIProcess):
         Trace.end("train", monitoring_stats=stats)
         self.send_exit_to_parent()
         self.send_history_to_parent()
-        self.data.finalize()
+        # self.data.finalize()
 
     @trace
     def compute_update(self):
@@ -713,7 +715,7 @@ class MPIMaster(MPIProcess):
                     self.apply_update()
                     self.sync_parent()
                     self.sync_children()
-                self.update = self.model.format_update()
+                #self.update = self.model.format_update()
             if (self.algo.validate_every > 0 and self.time_step > 0):
                 if (self.time_step % self.algo.validate_every == 0) or (
                         self._short_batches and self.time_step % self._short_batches == 0):
@@ -760,6 +762,7 @@ class MPIMaster(MPIProcess):
         """
         source = status.Get_source()
         tag = self.lookup_mpi_tag(status.Get_tag(), inv=True)
+
         if tag == 'begin_update':
             if self.algo.mode == 'gem':
                 self.do_gem_update_sequence(source)
@@ -799,9 +802,15 @@ class MPIMaster(MPIProcess):
         self.running_workers = list(range(1, self.num_workers + 1))
         self.waiting_workers_list = []
 
+        self.logger.info("Master.train")
+
         while self.running_workers:
             self.recv_any_from_child(status)
+            #self.logger.info(f'weight {self.weights["w"]}')
+            #self.logger.info(f'weight {self.update["w"]}')
             self.process_message(status)
+            #self.logger.info(f'weight {self.weights["w"]}')
+            #self.logger.info(f'weight {self.update}')
             if (self.stop_training):
                 self.shut_down_workers()
         self.logger.info("Done training")
@@ -813,10 +822,17 @@ class MPIMaster(MPIProcess):
             self.validation_queue.put(None)
             self.validation_queue.join()
             self.validation_thread.join()
-        self.save_checkpoint()
+
+        self.logger.info("Final performance of the model")
+        accuracy_test, activations_test = self.model.predict(self.data.x_test, self.data.y_test)
+        accuracy_train, activations_train = self.model.predict(self.data.x_train, self.data.y_train)
+        loss_test = self.model.compute_loss(self.data.y_test, activations_test)
+        loss_train = self.model.compute_loss(self.data.y_train, activations_train)
+        self.logger.info(
+            f"Loss train: {loss_train}, Loss test: {loss_test}, Accuracy train: {accuracy_train}, Accuracy test: {accuracy_test}")
         self.send_exit_to_parent()
         self.send_history_to_parent()
-        self.data.finalize()
+        # self.data.finalize()
         self.stop_time = time.time()
         Trace.end("train")
 
@@ -874,18 +890,20 @@ class MPIMaster(MPIProcess):
             return {}
         model.set_weights(weights)
 
+
         self.logger.debug("Starting validation")
         val_metrics = np.zeros((1,))
         i_batch = 0
-        for i_batch, batch in enumerate(self.data.generate_data()):
+        for i_batch, batch in enumerate(self.data.generate_test_data()):
             new_val_metrics = model.test_on_batch(x=batch[0], y=batch[1])
+
             if val_metrics.shape != new_val_metrics.shape:
                 val_metrics = np.zeros(new_val_metrics.shape)
             val_metrics += new_val_metrics
             if self._short_batches and i_batch > self._short_batches: break
         val_metrics = val_metrics / float(i_batch + 1)
-        l = model.get_logs(val_metrics, val=True)
-        self.update_history(l)
+        #l = model.get_logs(val_metrics, val=True)
+        #self.update_history(l)
 
         if self.target_metric:
             m, opp, v = self.target_metric

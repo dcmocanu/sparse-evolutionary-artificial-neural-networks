@@ -10,13 +10,21 @@ from keras.datasets import cifar10
 from mpi4py import MPI
 from time import time, sleep
 
-from manager import MPIManager, get_device
+from manager import MPIManager
 from train.algo import Algo
-from train.data import H5Data
+from train.data import Data
 from train.model import SETModel
 from utils import import_keras
 from train.trace import Trace
 from logger import initialize_logger
+
+# Debugging
+# size = MPI.COMM_WORLD.Get_size()
+# rank = MPI.COMM_WORLD.Get_rank()
+# import pydevd_pycharm
+# port_mapping = [61263, 61264, 61268]
+# pydevd_pycharm.settrace('localhost', port=port_mapping[rank], stdoutToServer=True, stderrToServer=True)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -53,8 +61,7 @@ if __name__ == '__main__':
     parser.add_argument('--synchronous', help='run in synchronous mode', action='store_true')
 
     # configuration of training process
-    parser.add_argument('--epochs', help='number of training epochs', default=1, type=int)
-    parser.add_argument('--optimizer', help='optimizer for master to use', default='adam')
+    parser.add_argument('--optimizer', help='optimizer for master to use', default='sgd')
     parser.add_argument('--loss', help='loss function', default='binary_crossentropy')
     parser.add_argument('--early-stopping', default=None,
                         dest='early_stopping', help='patience for early stopping')
@@ -91,7 +98,6 @@ if __name__ == '__main__':
     parser.add_argument('--log-level', default='info', dest='log_level', help='log level (debug, info, warn, error)')
 
     # Training settings
-    parser = argparse.ArgumentParser(description='SET Parallel Training ')
     parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=3000, metavar='N',
@@ -130,7 +136,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    # initialize_logger(filename=args.log_file, file_level=args.log_level, stream_level=args.log_level)
+    initialize_logger(filename="log.txt", file_level=args.log_level, stream_level=args.log_level)
 
     # Set parameters
     n_hidden_neurons = args.n_neurons
@@ -164,19 +170,17 @@ if __name__ == '__main__':
         'n_testing_samples': n_testing_samples,
     }
 
-    X_train, Y_train, X_test, Y_test = load_cifar10_data(50000, 10000)
+    X_train, Y_train, X_test, Y_test = load_cifar10_data(10000, 2000)
 
     comm = MPI.COMM_WORLD.Dup()
-
-    #if args.trace: Trace.enable()
 
     model_weights = None
     model_builder = SETModel(comm, **config)
 
-    data = H5Data(batch_size=batch_size, X=X_train, Y=Y_train)
+    data = Data(batch_size=batch_size, x_train=X_train, y_train=Y_train, x_test=X_test, y_test=Y_test)
     # We initialize the Data object with the training data list
     # so that we can use it to count the number of training examples
-    validate_every = int(data.X.shape[0] / batch_size)
+    validate_every = int(data.x_train.shape[0] / batch_size)
 
     # Some input arguments may be ignored depending on chosen algorithm
     algo = Algo(optimizer='sgd', loss='binary_crossentropy', validate_every=validate_every,
@@ -185,14 +189,14 @@ if __name__ == '__main__':
 
     # Creating the MPIManager object causes all needed worker and master nodes to be created
     manager = MPIManager(comm=comm, data=data, algo=algo, model_builder=model_builder,
-                         num_epochs=args.epochs, train_list=train_list, val_list=val_list,
-                         num_masters=args.masters, num_processes=args.processes,
-                         synchronous=args.synchronous,
-                         verbose=args.verbose, monitor=args.monitor,
-                         early_stopping=args.early_stopping,
-                         target_metric=args.target_metric,
-                         thread_validation=args.thread_validation,
-                         checkpoint=args.checkpoint, checkpoint_interval=args.checkpoint_interval)
+                         num_epochs=args.epochs, x_train=X_train, y_train=Y_train, x_test=X_test, y_test=Y_test,
+                         num_masters=1, num_processes=4,
+                         synchronous=True,
+                         verbose=True, monitor=False,
+                         early_stopping=False,
+                         target_metric=None,
+                         thread_validation=False
+    )
 
     # Process 0 launches the training procedure
     if comm.Get_rank() == 0:
@@ -206,4 +210,3 @@ if __name__ == '__main__':
 
     comm.barrier()
     logging.info("Terminating")
-    if args.trace: Trace.collect(clean=True)

@@ -22,7 +22,7 @@ class Algo(object):
     # available options and their default values
     supported_opts = {'loss': 'binary_crossentropy',
                       'validate_every': 1000,
-                      'sync_every': 1,
+                      'sync_every': 10,
                       'mode': 'sgd',
                       'worker_optimizer': 'sgd',
                       'worker_optimizer_params': '{}',
@@ -66,7 +66,7 @@ class Algo(object):
             sending it to the master, so we use ordinary SGD with learning rate 1 and 
             compute the gradient as (old weights - new weights) after each batch."""
         self.worker_optimizer_builder = OptimizerBuilder(self.worker_optimizer,
-                                                         literal_eval(self.worker_optimizer_params))
+                                                         self.worker_optimizer_params)
 
         self.step_counter = 0
         if self.mode == 'gem':
@@ -99,11 +99,6 @@ class Algo(object):
         return '\n'.join(strs)
 
     ### For Worker ###
-
-    def compile_model(self, model):
-        """Compile the model."""
-        model.compile(loss=self.loss, optimizer=self.worker_optimizer_builder, metrics=['accuracy'])
-
     def compute_update(self, cur_weights, new_weights):
         """Computes the update to be sent to the parent process"""
         if self.worker_update_type == 'gem':
@@ -111,15 +106,10 @@ class Algo(object):
         elif self.worker_update_type == 'weights':
             return new_weights
         else:
-            update = []
-            for cur_w, new_w in zip(cur_weights, new_weights):
-                if type(cur_w) == list:
-                    ## polymorph case
-                    update.append([])
-                    for sub_c_w, sub_n_w in zip(cur_w, new_w):
-                        update[-1].append(np.subtract(sub_c_w, sub_n_w))
-                else:
-                    update.append(np.subtract(cur_w, new_w))
+            update = {'w': {}, 'b': {}}
+            for (k_new, new), (k_old, old) in zip(cur_weights.items(), new_weights.items()):
+                for (i1, n), (i2, o) in zip(old.items(), new.items()):
+                    update[k_new][i1] = o - n
             return update
 
     def compute_update_worker(self, weights, update):
@@ -162,9 +152,9 @@ class Algo(object):
         if self.mode == 'easgd':
             return self.get_elastic_update(weights, update)
         else:
-            if type(weights[0]) == list:
-                if type(self.optimizer) != MultiOptimizer:
-                    self.optimizer = MultiOptimizer(self.optimizer, len(weights))
+            # if not weights['w']:
+            #     new_weights = update
+            # else:
             new_weights = self.optimizer.apply_update(weights, update)
             return new_weights
 

@@ -75,8 +75,8 @@ def createSparseWeights(epsilon, noRows, noCols):
     weights = lil_matrix((noRows, noCols))
     for i in range(epsilon * (noRows + noCols)):
         weights[np.random.randint(0, noRows), np.random.randint(0, noCols)] = np.float64(np.random.randn() / 10)
-    print("Create sparse matrix with ", weights.getnnz(), " connections and ",
-          (weights.getnnz() / (noRows * noCols)) * 100, "% density level")
+    # print("Create sparse matrix with ", weights.getnnz(), " connections and ",
+    #       (weights.getnnz() / (noRows * noCols)) * 100, "% density level")
     weights = weights.tocsr()
     return weights
 
@@ -201,6 +201,7 @@ class SET_MLP:
         self.zeta = config['zeta']  # the fraction of the weights removed
         self.dropout_rate = config['dropout_rate']  # dropout rate
         self.dimensions = dimensions
+        self.batch_size = config['batch_size']
 
         # Weights and biases are initiated by index. For a one hidden layer net you will have a w[1] and w[2]
         self.w = {}
@@ -231,7 +232,7 @@ class SET_MLP:
         #         self.activations[i + 2] = activations[i]
         t2 = datetime.datetime.now()
 
-        print("Creation sparse weights time: ", t2 - t1)
+        # print("Creation sparse weights time: ", t2 - t1)
 
         self.loss = MSE(self.activations[self.n_layers])
 
@@ -243,10 +244,9 @@ class SET_MLP:
 
         params = {
             'w': self.w,
-            'b': self.b,
-            'pdw': self.pdw,
-            'pdd': self.pdd,
-            'activations': self.activations
+            'b': self.b
+            #'pdw': self.pdw,
+            #'pdd': self.pdd,
         }
 
         return params
@@ -254,9 +254,8 @@ class SET_MLP:
     def set_parameters(self, params):
         self.w = params['w']
         self.b = params['b']
-        self.pdw = params['pdw']
-        self.pdd = params['pdd']
-        self.activations = params['activations']
+        #self.pdw = params['pdw']
+        #self.pdd = params['pdd']
 
     def _feed_forward(self, x, drop=True):
         """
@@ -351,6 +350,16 @@ class SET_MLP:
 
         self.w[index] += self.pdw[index] - self.weight_decay * self.w[index]
         self.b[index] += self.pdd[index] - self.weight_decay * self.b[index]
+
+    def train_on_batch(self, x, y):
+        z, a = self._feed_forward(x, True)
+        self._back_prop(z, a, y)
+        accuracy, activations = self.predict(x, y, self.batch_size)
+        return self.loss.loss(y, activations), accuracy
+
+    def test_on_batch(self, x, y):
+        accuracy, activations = self.predict(x, y, self.batch_size)
+        return self.loss.loss(y, activations), accuracy
 
     def fit(self, x, y_true, x_test, y_test, batch_size=128, testing=True, save_filename=""):
         """

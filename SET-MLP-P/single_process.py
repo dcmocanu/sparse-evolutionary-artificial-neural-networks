@@ -37,9 +37,9 @@ class MPISingleWorker(MPIWorker):
             i_batch = 0
 
             for i_batch, batch in enumerate(self.data.generate_data()):
-                train_metrics = self.model.train_on_batch( x=batch[0], y=batch[1] )
+                train_metrics = self.model.train_on_batch(x=batch[0], y=batch[1])
                 if epoch_metrics.shape != train_metrics.shape:
-                    epoch_metrics = np.zeros( train_metrics.shape)
+                    epoch_metrics = np.zeros(train_metrics.shape)
                 epoch_metrics += train_metrics
 
                 ######
@@ -48,25 +48,23 @@ class MPISingleWorker(MPIWorker):
                 self.algo.set_worker_model_weights( self.model, self.weights )
                 ######
 
-                if self._short_batches and i_batch>self._short_batches: break
+                if self._short_batches and i_batch > self._short_batches: break
 
             if self.monitor:
                 self.monitor.stop_monitor()
             epoch_metrics = epoch_metrics / float(i_batch+1)
-            l = self.model.get_logs( epoch_metrics )
-            self.update_history( l )
+            #l = self.model.get_logs( epoch_metrics )
+            #self.update_history( l )
 
             if self.stop_training:
                 break
 
             self.validate()
-            self.save_checkpoint()
 
         logging.info("Signing off")
         if self.monitor:
             self.update_monitor( self.monitor.get_stats() )
 
-        self.data.finalize()
 
     def validate(self):
         return MPIMaster.validate_aux(self, self.weights, self.model)

@@ -7,8 +7,7 @@ import numpy as np
 import time
 import json
 import logging
-
-from train.data import H5Data
+from train.data import Data
 from utils import get_num_gpus
 
 
@@ -26,61 +25,6 @@ def get_groups(comm, num_masters=1, num_processes=1):
 
     groups = [sorted(g) for g in groups]
     return masters, groups, processes
-
-
-def get_device(comm, num_masters=1, gpu_limit=-1, gpu_for_master=False):
-    """Arguments:
-        comm: MPI intracommunicator containing all processes
-        num_masters: number of processes that will be assigned as masters
-        gpu_limit: maximum number of gpus to use on one host
-        gpu_for_master: whether master processes should be given a gpu
-       Returns device name 'cpu' or 'gpuN' appropriate for use with theano"""
-
-    def get_gpu_list(mem_lim=2000):
-        import gpustat
-        stats = gpustat.GPUStatCollection.new_query()
-        ids = list(map(lambda gpu: int(gpu.entry['index']), stats))
-        ratios = map(lambda gpu: float(gpu.entry['memory.used']) / float(gpu.entry['memory.total']), stats)
-        # used = list(map(lambda gpu: float(gpu.entry['memory.used']), stats))
-        # unused_gpu = filter(lambda x: x[1] < 100.0, zip(ids, used))
-        free = list(map(lambda gpu: float(gpu.entry['memory.total']) - float(gpu.entry['memory.used']), stats))
-        unused_gpu = list(filter(lambda x: x[1] > mem_lim, zip(ids, free)))
-        return [x[0] for x in unused_gpu]
-
-    # Get the ranks of the other processes that share the same host
-    # and determine which GPU to take on the host
-    if gpu_limit == 0:
-        logging.info("required to not use gpu")
-        dev = 'cpu'
-        return dev
-
-    rank = comm.Get_rank()
-    host = MPI.Get_processor_name()
-    hosts = comm.allgather(host)
-    workers_sharing_host = [i for i in range(comm.Get_size()) if hosts[i] == host]
-    if rank in workers_sharing_host:
-        worker_id = workers_sharing_host.index(rank)
-    else:
-        worker_id = -1
-
-    for inode in range(comm.Get_size()):
-        if rank == inode:
-            gpu_list = get_gpu_list()
-            if gpu_limit >= 0:
-                gpu_list = gpu_list[:gpu_limit]  # limit the number of gpu
-            if len(gpu_list) == 0:
-                logging.info("No free GPU available. Using CPU instead.")
-                dev = 'cpu'
-            elif worker_id < 0:
-                ## alone on that machine
-                logging.info("Alone on the node and taking the last gpu")
-                dev = 'gpu%d' % (gpu_list[-1])
-            else:
-                logging.debug("Sharing a node and taking on the gpu")
-                dev = 'gpu%d' % (gpu_list[worker_id % len(gpu_list)])
-            logging.debug("rank %d can have %s", rank, dev)
-        comm.Barrier()
-    return dev
 
 
 class MPIManager(object):
@@ -111,8 +55,7 @@ class MPIManager(object):
           verbose: whether to make MPIProcess objects verbose
     """
 
-    def __init__(self, comm, data, algo, model_builder, num_epochs, train_list,
-                 val_list, num_masters=1, num_processes=6, synchronous=False,
+    def __init__(self, comm, data, algo, model_builder, num_epochs, x_train, y_train, x_test, y_test, num_masters=1, num_processes=6, synchronous=False,
                  verbose=False, custom_objects={}, early_stopping=None, target_metric=None,
                  monitor=False, thread_validation=False, checkpoint=None, checkpoint_interval=5):
         """Create MPI communicator(s) needed for training, and create worker
@@ -146,8 +89,12 @@ class MPIManager(object):
         self.worker_id = -1
 
         self.num_epochs = num_epochs
-        self.train_list = train_list
-        self.val_list = val_list
+
+        self.x_train = x_train
+        self.y_train = y_train
+        self.x_test = x_test
+        self.y_test = y_test
+
         self.synchronous = synchronous
         self.verbose = verbose
         self.monitor = monitor
@@ -237,9 +184,9 @@ class MPIManager(object):
 
         # Process initialization
         if comm.Get_size() != 1:
-            from .process import MPIWorker, MPIMaster
+            from process import MPIWorker, MPIMaster
             if self.is_master:
-                self.set_val_data()
+
                 num_sync_workers = self.get_num_sync_workers(child_comm)
                 self.process = MPIMaster(parent_comm, parent_rank=self.parent_rank,
                                          data=self.data, algo=self.algo, model_builder=self.model_builder,
@@ -251,7 +198,7 @@ class MPIManager(object):
                                          checkpoint=self.checkpoint, checkpoint_interval=self.checkpoint_interval
                                          )
             else:
-                self.set_train_data()
+
                 self.process = MPIWorker(data=self.data, algo=self.algo,
                                          model_builder=self.model_builder,
                                          process_comm=self.comm_instance,
@@ -264,9 +211,7 @@ class MPIManager(object):
                                          checkpoint=self.checkpoint, checkpoint_interval=self.checkpoint_interval
                                          )
         else:  # Single Process mode
-            from .single_process import MPISingleWorker
-            self.set_val_data()
-            self.set_train_data(use_all=True)
+            from single_process import MPISingleWorker
             self.process = MPISingleWorker(data=self.data, algo=self.algo,
                                            model_builder=self.model_builder,
                                            num_epochs=self.num_epochs,
@@ -287,11 +232,6 @@ class MPIManager(object):
 
     def train(self):
         if self.parent_rank is None:
-            ## start the uber master, as all over masters are self-started
-            ## check MPIProcess.__init__
-            # if self.parent_rank is not None:
-            # self.bcast_weights( self.parent_comm )
-            # self.train()
             return self.process.train()
         else:
             return None
@@ -305,81 +245,6 @@ class MPIManager(object):
             return int(math.ceil(0.95 * (comm.Get_size() - 1)))
         return 1
 
-    def set_train_data(self, use_all=False):
-        """Sets the training data files to be used by the current process"""
-        logging.debug("number of workers %d", self.num_workers)
-        logging.debug("number of files %d", len(self.train_list))
-        if use_all:
-            files_for_this_worker = self.train_list
-        else:
-            files_for_this_worker = [fn for (i, fn) in enumerate(self.train_list) if
-                                     i % self.num_workers == (self.worker_id - 1)]
-
-        logging.debug("Files for worker id{}, rank {}:{}".format(self.worker_id,
-                                                                 self.comm_block.Get_rank() if self.comm_block else "N/A",
-                                                                 self.comm_instance.Get_rank() if self.comm_instance else "N/A")
-                      )
-        if not files_for_this_worker:
-            ## this is bad and needs to make it abort
-            logging.debug("There are no files for training, this is a fatal issue")
-            import sys
-            sys.exit(13)
-
-        for f in files_for_this_worker:
-            logging.debug("  {0}".format(f))
-        self.data.set_file_names(files_for_this_worker)
-
-    def set_val_data(self):
-        """Sets the validation data files to be used by the current process
-            (only the master process has validation data associated with it)"""
-        if not self.should_validate: return None
-        logging.debug("Files for validation:")
-        if not self.val_list:
-            ## this is bad and needs to make it abort
-            logging.error("There are no files for validating, this is a fatal issue")
-            import sys
-            sys.exit(13)
-
-        for f in self.val_list:
-            logging.debug("  {0}".format(f))
-        self.data.set_file_names(self.val_list)
-
-    #    def make_comms_many(self,comm):
-    #        """Create MPI communicators# (Case 1):
-    #            Rank 0 of comm_block is# the master, other ranks are workers.
-    #            Rank 0 of comm_master i#s the super-master, other ranks are sub-masters.
-    #            Sets is_master and work#er_id attributes."""
-    #
-    #        # Create a communicator containing all processes except the first.
-    #        # Then divide that communicator into blocks, each with one master
-    #        ranks_excludefirstprocess = range(1,comm.Get_size())
-    #        comm_excludefirstprocess = comm.Create( comm.Get_group().Incl( ranks_excludefirstprocess ) )
-    #        if comm.Get_rank() in ranks_excludefirstprocess:
-    #            size_block = (comm.Get_size()-1) // (self.num_masters-1)
-    #            color_block = comm_excludefirstprocess.Get_rank() // size_block
-    #            self.comm_block = comm_excludefirstprocess.Split( color_block )
-    #            comm_excludefirstprocess.Free()
-    #        else:
-    #            self.comm_block = None
-    #        # Create a communicator containing all masters
-    #        ranks_mastergroup = get_master_ranks( comm, self.num_masters )
-    #        self.comm_masters = comm.Create( comm.Get_group().Incl(ranks_mastergroup) )
-    #        self.is_master = ( comm.Get_rank() in ranks_mastergroup )
-    #        self.should_validate = ( comm.Get_rank() == 0 )
-    #        # Get the worker ID
-    #        ranks_workergroup = get_worker_ranks( comm, self.num_masters )
-    #        if not self.is_master:
-    #            self.worker_id = ranks_workergroup.index( comm.Get_rank() )
-    #
-    #    def make_comm_single(self,comm):
-    #        """Create MPI communicator (Case 2): Rank 0 is master, all others are workers
-    #            Sets is_master and worker_id attributes"""
-    #        self.comm_block = comm
-    #        self.is_master = ( self.comm_block.Get_rank() == 0 )
-    #        self.should_validate = self.is_master
-    #        if not self.is_master:
-    #            self.worker_id = self.comm_block.Get_rank() - 1
-    #
     def free_comms(self):
         """Free active MPI communicators"""
         if self.process.process_comm is not None:

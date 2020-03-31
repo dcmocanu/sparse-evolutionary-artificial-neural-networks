@@ -10,19 +10,6 @@ import six
 import logging
 
 
-def session(f):
-    def wrapper(*args, **kwargs):
-        self_obj = args[0]
-        if hasattr(self_obj, 'session'):
-            with self_obj.graph.as_default():
-                with self_obj.session.as_default():
-                    return f(*args, **kwargs)
-        else:
-            return f(*args, **kwargs)
-
-    return wrapper
-
-
 class MPIModel(object):
     """Class that abstract all details of the model
     """
@@ -34,10 +21,9 @@ class MPIModel(object):
         if model and models:
             raise Exception("Cannot specify single and multiple models")
 
-    @session
     def print_metrics(self, metrics):
         if self.model:
-            names = self.model.metrics_names
+            names = ['loss', 'accuracy']
             for name, metric in zip(names, metrics):
                 logging.info("{0}: {1:.3f}".format(name, metric))
         else:
@@ -48,7 +34,6 @@ class MPIModel(object):
                 for name, metric in zip(names, ametric):
                     logging.info("{0}: {1:.3f}".format(name, metric))
 
-    @session
     def get_logs(self, metrics, val=False):
         if self.model:
             if val:
@@ -69,7 +54,6 @@ class MPIModel(object):
                                  zip(m.metrics_names, ametrics)})
             return logs
 
-    @session
     def update_history(self, items, arg_hist):
         if self.model:
             for m, v in items.items():
@@ -85,71 +69,28 @@ class MPIModel(object):
                     arg_hist.setdefault(m_name, {}).setdefault(m, []).append(v)
         self.histories = arg_hist
 
-    @session
     def format_update(self):
-        if self.model:
-            return [np.zeros(w.shape, dtype=np.float32) for w in self.model.get_weights()]
-        else:
-            up = []
-            for m in self.models:
-                up.append([np.zeros(w.shape, dtype=np.float32) for w in m.get_weights()])
-            return up
+        if not self.model.parameters()['w']:
+            return {'w': {}, 'b': {}}
 
-    @session
     def get_weights(self):
-        if self.model:
-            return self.model.get_weights()
-        else:
-            l_weights = []
-            for m in self.models:
-                l_weights.append(m.get_weights())
-            return l_weights
+        return self.model.parameters()
 
-    @session
     def set_weights(self, w):
-        if self.model:
-            self.model.set_weights(w)
-        else:
-            for m, mw in zip(self.models, w):
-                m.set_weights(mw)
+        self.model.set_parameters(w)
 
-    @session
-    def compile(self, **args):
-        if 'optimizer' in args and isinstance(args['optimizer'], OptimizerBuilder):
-            opt_builder = args['optimizer']
-        else:
-            opt_builder = None
-        if self.model:
-            if opt_builder:
-                args['optimizer'] = opt_builder.build()
-            self.model.compile(**args)
-        else:
-            for m in self.models:
-                if opt_builder:
-                    args['optimizer'] = opt_builder.build()
-                m.compile(**args)
-
-    @session
     def train_on_batch(self, **args):
-        if self.model:
-            return np.asarray(self.model.train_on_batch(**args))
-        else:
-            h = []
-            for m in self.models:
-                h.append(m.train_on_batch(**args))
-            return np.asarray(h)
+        return np.asarray(self.model.train_on_batch(**args))
 
-    @session
     def test_on_batch(self, **args):
-        if self.model:
-            return np.asarray(self.model.test_on_batch(**args))
-        else:
-            h = []
-            for m in self.models:
-                h.append(m.test_on_batch(**args))
-            return np.asarray(h)
+        return np.asarray(self.model.test_on_batch(**args))
 
-    @session
+    def predict(self, x, y):
+        return self.model.predict(x, y, self.model.batch_size)
+
+    def compute_loss(self, y, activations):
+        self.model.loss.loss(y, activations)
+
     def figure_of_merit(self, **args):
         ## runs like predict trace, and provides a non differentiable figure of merit for hyper-opt
         ## can of course be the validation loss
@@ -159,10 +100,6 @@ class MPIModel(object):
             # return self.histories['val_loss'][-1]
         else:
             return 0.
-
-    def close(self):
-        if hasattr(self, 'session'):
-            self.session.close()
 
 
 class ModelBuilder(object):
@@ -204,7 +141,7 @@ class SETModel(ModelBuilder):
         self.config = config
 
     def build_model(self, local_session=True):
-        self.dimensions = (3017, 4000, 1000, 4000, 10)
+        self.dimensions = (3072, 4000, 1000, 4000, 10)
         return MPIModel(model=SET_MLP(self.dimensions, (Relu, Relu, Relu, Sigmoid), **self.config))
 
     def get_backend_name(self):

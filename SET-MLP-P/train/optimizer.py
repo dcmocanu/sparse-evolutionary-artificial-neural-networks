@@ -9,6 +9,7 @@ import logging
 
 from utils import weights_from_shapes
 
+
 class Optimizer(object):
     """Base class for optimization algorithms.
         Currently doesn't do anything."""
@@ -41,6 +42,7 @@ class Optimizer(object):
             new_self = None
         return new_self
 
+
 class MultiOptimizer(Optimizer):
     def __init__(self, opt, s):
         self.opts = [copy.deepcopy(opt) for i in range(s)]
@@ -55,6 +57,7 @@ class MultiOptimizer(Optimizer):
             r.append( o.apply_update(w,g) )
         return r
 
+
 class VanillaSGD(Optimizer):
     """Stochastic gradient descent with no extra frills.
           learning_rate: learning rate parameter for SGD"""
@@ -66,15 +69,16 @@ class VanillaSGD(Optimizer):
     def apply_update(self, weights, gradient):
         """Move weights in the direction of the gradient, by the amount of the
             learning rate."""
-        new_weights = []
-        for w, g in zip(weights, gradient):
-            if type(w) == list:
-                new_weights.append( [] )
-                for ww, gg in zip(w,g):
-                    new_weights[-1].append( np.subtract( ww, self.learning_rate*gg) )
-            else:
-                new_weights.append(np.subtract(w, self.learning_rate*g))
+
+        new_weights = {'w': {}, 'b': {}}
+        for (id1, w), (id2, pdw) in zip(weights['w'].items(), gradient['w'].items()):
+                new_weights['w'][id1] = w - self.learning_rate*pdw
+
+        for (id1, b), (id2, pdd) in zip(weights['b'].items(), gradient['b'].items()):
+                new_weights['b'][id1] = b - self.learning_rate*pdd
+
         return new_weights
+
 
 class RunningAverageOptimizer(Optimizer):
     """Base class for AdaDelta, Adam, and RMSProp optimizers.
@@ -127,6 +131,7 @@ class RunningAverageOptimizer(Optimizer):
             value: numpy array containing the running average of squares"""
         return np.sqrt( np.add(value, self.epsilon) )
 
+
 class Adam(RunningAverageOptimizer):
     """Adam optimizer.
         Note that the beta_2 parameter is stored internally as 'rho'
@@ -168,7 +173,6 @@ class Adam(RunningAverageOptimizer):
             logging.debug("min previous %d",np.min(previous))
             logging.debug("max previous %d",np.max(previous))
             return previous
-
 
     def running_average(self, previous, update):
         """Returns the running average of the square of a quantity.
@@ -231,6 +235,7 @@ class Adam(RunningAverageOptimizer):
             new_weights.append( w - update )
         return new_weights
 
+
 class AdaDelta(RunningAverageOptimizer):
     """ADADELTA adaptive learning rate method.
         running_dx2: running average of squared parameter updates
@@ -262,6 +267,7 @@ class AdaDelta(RunningAverageOptimizer):
         self.running_dx2 = self.running_average_square( self.running_dx2, updates )
         return new_weights
 
+
 class RMSProp(RunningAverageOptimizer):
     """RMSProp adaptive learning rate method.
         learning_rate: base learning rate, kept constant
@@ -289,255 +295,6 @@ class RMSProp(RunningAverageOptimizer):
             new_weights.append( np.subtract( w, update ) )
         return new_weights
 
-class TFOptimizer(Optimizer):
-    def __init__(self, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-
-        self.sess = None
-        self.saver = None
-        self.load_fn = None
-        self.tf_optimizer = None
-
-        self.reset()
-
-    def reset(self):
-        import tensorflow as tf
-
-        if self.sess:
-            self.sess.close() #free resources from previous execution
-
-        self.sess = tf.Session()
-        self.do_reset = True
-
-    def save(self, fn='train_history'):
-        fn = re.sub(r'\.algo$', '', fn)
-        if not fn.startswith('./'):
-            fn = './' + fn
-        path = self.saver.save(self.sess, fn)
-        logging.info("Saved state to %s", path)
-
-    def setup_update(self, weights):
-        import tensorflow as tf
-
-        """Setup the tf computational graph. Should be run once for each model
-            Receives the weights in order to know the shapes to use
-        """
-        self.gradient = [ tf.placeholder(dtype=tf.float32, shape=w.shape, name="gradient") for w in weights ]
-        self.weights = [ tf.Variable(w, dtype=tf.float32, name="weights_{}".format(i)) for i, w in enumerate(weights) ]
-
-        var_list = zip(self.gradient, self.weights)
-
-        self.tf_time = tf.Variable(1, dtype=tf.float32, name="time")
-
-        self.optimizer_op = self.tf_optimizer.apply_gradients(
-            grads_and_vars=var_list,
-            global_step=self.tf_time,
-            name='optimizer_op' # We may need to create uniqie name
-        )
-
-        self.saver = tf.train.Saver(max_to_keep=None)
-
-        if self.load_fn:
-            self.saver.restore(self.sess, self.load_fn)
-        else:
-            self.sess.run(tf.global_variables_initializer())
-
-    def load(self, fn='train_history'):
-        load_fn = re.sub(r'\.algo$', '', fn)
-        if os.path.isfile(load_fn + '.meta'):
-            self.load_fn = load_fn
-            self.do_reset = True
-            return self
-        else:
-            return None
-
-    def apply_update(self, weights, gradient):
-        if self.do_reset:
-            self.setup_update(weights)
-            self.do_reset = False
-
-        gradient_dict = {placeholder : value for placeholder, value in zip(self.gradient, gradient)}
-
-        #Trace.begin("tf_optimizer")
-        self.sess.run(self.optimizer_op, feed_dict=gradient_dict)
-        #Trace.end("tf_optimizer")
-
-        #Trace.begin("tf_get_weights")
-        res = self.sess.run(self.weights)
-        #Trace.end("tf_get_weights")
-
-        return res
-
-class GradientDescentTF(TFOptimizer):
-    def __init__(self, learning_rate=0.01):
-        super(GradientDescentTF, self).__init__(learning_rate=learning_rate)
-
-    def setup_update(self, weights):
-        import tensorflow as tf
-
-        self.tf_optimizer = tf.train.GradientDescentOptimizer(
-            learning_rate=self.learning_rate,
-            use_locking=False,
-            name='SGDMaster' # We may need to create uniqie name
-        )
-
-        super(GradientDescentTF, self).setup_update(weights)
-
-class AdaDeltaTF(TFOptimizer):
-    def __init__(self, learning_rate=0.001, rho=0.95, epsilon=1e-8):
-        super(AdaDeltaTF, self).__init__(learning_rate=learning_rate, rho=rho, epsilon=epsilon)
-
-    def setup_update(self, weights):
-        import tensorflow as tf
-
-        self.tf_optimizer = tf.train.AdadeltaOptimizer(
-            learning_rate=self.learning_rate,
-            rho=self.rho,
-            epsilon=self.epsilon,
-            use_locking=False,
-            name='AdaDeltaMaster' # We may need to create uniqie name
-        )
-
-        super(AdaDeltaTF, self).setup_update(weights)
-
-class RMSPropTF(TFOptimizer):
-    def __init__(self, learning_rate=0.001, decay=0.9, momentum=0.0, epsilon=1e-10):
-        super(RMSPropTF, self).__init__(learning_rate=learning_rate, decay=decay,
-            momentum=momentum, epsilon=epsilon)
-
-    def setup_update(self, weights):
-        import tensorflow as tf
-
-        self.tf_optimizer = tf.train.RMSPropOptimizer(
-            learning_rate=self.learning_rate,
-            decay=self.decay,
-            momentum=self.momentum,
-            epsilon=self.epsilon,
-            use_locking=False,
-            name='RMSPropMaster' # We may need to create uniqie name
-        )
-
-        super(RMSPropTF, self).setup_update(weights)
-
-class AdamTF(TFOptimizer):
-    def __init__(self, learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8):
-        super(AdamTF, self).__init__(learning_rate=learning_rate,
-            beta_1=beta_1, beta_2=beta_2, epsilon=epsilon)
-
-    def setup_update(self, weights):
-        import tensorflow as tf
-
-        self.tf_optimizer = tf.train.AdamOptimizer(
-            learning_rate=self.learning_rate,
-            beta1=self.beta_1,
-            beta2=self.beta_2,
-            epsilon=self.epsilon,
-            use_locking=False,
-            name='AdamMaster' # We may need to create uniqie name
-        )
-
-        super(AdamTF, self).setup_update(weights)
-
-class TorchOptimizer(Optimizer):
-    def __init__(self, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-
-        self.parameters = None
-        self.torch_optimizer = None
-        self.state = None
-
-        self.reset()
-
-    def reset(self):
-        self.do_reset = True
-
-    def apply_update(self, weights, gradient):
-        import torch
-        if self.do_reset:
-            self.setup_update(weights)
-            if self.state is not None:
-                self.torch_optimizer.load_state_dict(self.state)
-            self.do_reset = False
-
-        for p, w, g in zip (self.parameters, weights, gradient):
-            p.data.copy_(torch.from_numpy(w))
-            p.grad.data.copy_(torch.from_numpy(g))
-
-        self.torch_optimizer.step()
-        return [i.data.cpu().numpy() for i in list(self.parameters)]
-
-    def setup_update(self, weights):
-        import torch
-        if self.parameters is not None:
-            for p in self.parameters:
-                del p
-        else:
-            self.parameters = [None] * len(weights)
-        for i, w in enumerate(weights):
-            p = torch.from_numpy(w).cuda()
-            g = torch.from_numpy(w).cuda()
-            var = torch.autograd.Variable(p, requires_grad=True)
-            var.grad = torch.autograd.Variable(g)
-            self.parameters[i] = var
-
-    def save(self, fn=None):
-        if fn is None:
-            fn = 'master-opt-{}.algo'.format( os.getpid())
-
-        state = self.torch_optimizer.state_dict()
-        with open(fn, 'wb') as out_file:
-            pickle.dump(state, out_file)
-        logging.info("Saved state to %s", fn)
-
-    def load(self, fn = 'algo_.pkl'):
-        if not fn.endswith('.algo'):
-            fn = fn + '.algo'
-        with open(fn, 'rb') as in_file:
-            self.state = pickle.load(in_file)
-        return self
-
-class SGDTorch(TorchOptimizer):
-    def __init__(self, lr=0.01, momentum=0, dampening=0, weight_decay=0, nesterov=False):
-        super(SGDTorch, self).__init__(lr=lr, momentum=momentum,
-            dampening=dampening, weight_decay=weight_decay, nesterov=nesterov)
-
-    def setup_update(self, weights):
-        super(SGDTorch, self).setup_update(weights)
-        import torch.optim as topt
-        self.torch_optimizer = topt.SGD(self.parameters, self.lr, self.momentum, self.dampening,
-            self.weight_decay, self.nesterov)
-
-class AdaDeltaTorch(TorchOptimizer):
-    def __init__(self, lr=1.0, rho=0.9, eps=1e-06, weight_decay=0):
-        super(AdaDeltaTorch, self).__init__(lr=lr, rho=rho, eps=eps, weight_decay=weight_decay)
-
-    def setup_update(self, weights):
-        super(AdaDeltaTorch, self).setup_update(weights)
-        import torch.optim as topt
-        self.torch_optimizer = topt.Adadelta(self.parameters, self.lr, self.rho, self.eps, self.weight_decay)
-
-class RMSPropTorch(TorchOptimizer):
-    def __init__(self, lr=0.01, alpha=0.99, eps=1e-08, weight_decay=0, momentum=0, centered=False):
-        super(RMSPropTorch, self).__init__(lr=lr, alpha=alpha, eps=eps, weight_decay=weight_decay,
-            momentum=momentum, centered=centered)
-
-    def setup_update(self, weights):
-        super(RMSPropTorch, self).setup_update(weights)
-        import torch.optim as topt
-        self.torch_optimizer = topt.RMSprop(self.parameters, self.lr, self.alpha, self.eps,
-            self.weight_decay, self.momentum, self.centered)
-
-class AdamTorch(TorchOptimizer):
-    def __init__(self, lr=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0):
-        super(AdamTorch, self).__init__(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
-
-    def setup_update(self, weights):
-        super(AdamTorch, self).setup_update(weights)
-        import torch.optim as topt
-        self.torch_optimizer = topt.Adam(self.parameters, self.lr, self.betas, self.eps,
-            self.weight_decay)
 
 class GEM(Optimizer):
     """GEM optimizer
@@ -615,6 +372,7 @@ class GEM(Optimizer):
             new_weights.append(np.add(w, u))
         return new_weights
 
+
 def get_optimizer(name):
     """Get optimizer class by string identifier"""
     lookup = {
@@ -624,23 +382,14 @@ def get_optimizer(name):
             'rmsprop':       RMSProp,
             'adam':          Adam,
             'gem':           GEM,
-            # Wrappers around TF's optimizers
-            'sgdtf':         GradientDescentTF,
-            'adadeltatf':    AdaDeltaTF,
-            'rmsproptf':     RMSPropTF,
-            'adamtf':        AdamTF,
-            # Wrappers arount Torch's optimizers
-            'sgdtorch':      SGDTorch,
-            'adadeltatorch': AdaDeltaTorch,
-            'rmsproptorch':  RMSPropTorch,
-            'adamtorch':     AdamTorch,
             }
     return lookup[name]
 
-class OptimizerBuilder(object):
-    """Builds a new Keras or Torch optimizer and optionally wraps it in horovod DistributedOptimizer."""
 
-    def __init__(self, name, config=None, horovod_wrapper=False):
+class OptimizerBuilder(object):
+    """Builds a  optimizer"""
+
+    def __init__(self, name, config=None):
         self.name = name
         self.config = config
         if self.config is None:
@@ -648,32 +397,9 @@ class OptimizerBuilder(object):
         if self.name == 'sgd' and 'lr' not in self.config:
             logging.warning("Learning rate for SGD not set, using 1.0.")
             self.config['lr'] = 1.
-        self.horovod_wrapper = horovod_wrapper
 
     def build(self):
         from keras.optimizers import deserialize
         opt_config = {'class_name': self.name, 'config': self.config}
         opt = deserialize(opt_config)
-        if self.horovod_wrapper:
-            import horovod.keras as hvd
-            if hasattr(opt, 'lr'):
-                opt.lr *= hvd.size()
-            opt = hvd.DistributedOptimizer(opt)
-        return opt
-
-    def build_torch(self, model):
-        import torch
-        lookup = {
-            'sgd':      torch.optim.SGD,
-            'adadelta': torch.optim.Adadelta,
-            'rmsprop':  torch.optim.RMSprop,
-            'adam':     torch.optim.Adam
-            }
-        if self.name not in lookup:
-            logging.warning("No optimizer '{}' found, using SGD instead".format(self.name))
-            self.name = 'sgd'
-        opt = lookup[self.name](model.parameters(), **self.config)
-        if self.horovod_wrapper:
-            import horovod.torch as hvd
-            opt = hvd.DistributedOptimizer(opt, named_parameters=model.named_parameters())
         return opt

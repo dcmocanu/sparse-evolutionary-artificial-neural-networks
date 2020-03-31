@@ -11,7 +11,7 @@ from process import MPIWorker, MPIMaster
 
 class MPISingleWorker(MPIWorker):
     """This class trains its model with no communication to other processes"""
-    def __init__(self, num_epochs, data, algo, model_builder,
+    def __init__(self, num_epochs, data, algo, model,
                 verbose, monitor, custom_objects,
                 early_stopping, target_metric,
                 checkpoint, checkpoint_interval):
@@ -22,7 +22,7 @@ class MPISingleWorker(MPIWorker):
         self.target_metric = (target_metric if type(target_metric)==tuple else tuple(map(lambda s : float(s) if s.replace('.','').isdigit() else s, target_metric.split(',')))) if target_metric else None
         self.patience = (early_stopping if type(early_stopping)==tuple else tuple(map(lambda s : float(s) if s.replace('.','').isdigit() else s, early_stopping.split(',')))) if early_stopping else None
 
-        super(MPISingleWorker, self).__init__(data, algo, model_builder, process_comm=None, parent_comm=None, parent_rank=None,
+        super(MPISingleWorker, self).__init__(data, algo, model, process_comm=None, parent_comm=None, parent_rank=None,
             num_epochs=num_epochs, verbose=verbose, monitor=monitor, custom_objects=custom_objects,
             checkpoint=checkpoint, checkpoint_interval=checkpoint_interval)
 
@@ -43,9 +43,9 @@ class MPISingleWorker(MPIWorker):
                 epoch_metrics += train_metrics
 
                 ######
-                self.update = self.algo.compute_update( self.weights, self.model.get_weights() )
-                self.weights = self.algo.apply_update( self.weights, self.update )
-                self.algo.set_worker_model_weights( self.model, self.weights )
+                self.update = self.algo.compute_update(self.weights, self.model.get_weights())
+                self.weights = self.algo.apply_update(self.weights, self.update)
+                self.algo.set_worker_model_weights(self.model, self.weights)
                 ######
 
                 if self._short_batches and i_batch > self._short_batches: break

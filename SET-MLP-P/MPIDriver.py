@@ -9,11 +9,10 @@ from keras.datasets import cifar10
 
 from mpi4py import MPI
 from time import time, sleep
-
 from manager import MPIManager
 from train.algo import Algo
 from train.data import Data
-from train.model import SETModel
+from train.model import MPIModel
 from utils import import_keras
 from train.trace import Trace
 from logger import initialize_logger
@@ -170,12 +169,11 @@ if __name__ == '__main__':
         'n_testing_samples': n_testing_samples,
     }
 
-    X_train, Y_train, X_test, Y_test = load_cifar10_data(10000, 2000)
+    X_train, Y_train, X_test, Y_test = load_cifar10_data(2000, 1000)
 
     comm = MPI.COMM_WORLD.Dup()
 
     model_weights = None
-    model_builder = SETModel(comm, **config)
 
     data = Data(batch_size=batch_size, x_train=X_train, y_train=Y_train, x_test=X_test, y_test=Y_test)
     # We initialize the Data object with the training data list
@@ -187,8 +185,11 @@ if __name__ == '__main__':
                 sync_every=1, worker_optimizer='sgd',
                 worker_optimizer_params={})
 
+    dimensions = (3072, 4000, 1000, 4000, 10)
+    model = MPIModel(model=SET_MLP(dimensions, (Relu, Relu, Relu, Sigmoid), **config))
+
     # Creating the MPIManager object causes all needed worker and master nodes to be created
-    manager = MPIManager(comm=comm, data=data, algo=algo, model_builder=model_builder,
+    manager = MPIManager(comm=comm, data=data, algo=algo, model=model,
                          num_epochs=args.epochs, x_train=X_train, y_train=Y_train, x_test=X_test, y_test=Y_test,
                          num_masters=1, num_processes=4,
                          synchronous=True,

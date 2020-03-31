@@ -55,7 +55,7 @@ class MPIManager(object):
           verbose: whether to make MPIProcess objects verbose
     """
 
-    def __init__(self, comm, data, algo, model_builder, num_epochs, x_train, y_train, x_test, y_test, num_masters=1, num_processes=6, synchronous=False,
+    def __init__(self, comm, data, algo, model, num_epochs, x_train, y_train, x_test, y_test, num_masters=1, num_processes=6, synchronous=False,
                  verbose=False, custom_objects={}, early_stopping=None, target_metric=None,
                  monitor=False, thread_validation=False, checkpoint=None, checkpoint_interval=5):
         """Create MPI communicator(s) needed for training, and create worker
@@ -76,7 +76,7 @@ class MPIManager(object):
         """
         self.data = data
         self.algo = algo
-        self.model_builder = model_builder
+        self.model = model
         self.num_masters = num_masters
         self.num_processes = num_processes
         if comm.Get_size() != 1:
@@ -189,7 +189,7 @@ class MPIManager(object):
 
                 num_sync_workers = self.get_num_sync_workers(child_comm)
                 self.process = MPIMaster(parent_comm, parent_rank=self.parent_rank,
-                                         data=self.data, algo=self.algo, model_builder=self.model_builder,
+                                         data=self.data, algo=self.algo, model=self.model,
                                          child_comm=child_comm, num_epochs=self.num_epochs,
                                          num_sync_workers=num_sync_workers,
                                          verbose=self.verbose, custom_objects=self.custom_objects,
@@ -200,7 +200,7 @@ class MPIManager(object):
             else:
 
                 self.process = MPIWorker(data=self.data, algo=self.algo,
-                                         model_builder=self.model_builder,
+                                         model=self.model,
                                          process_comm=self.comm_instance,
                                          parent_comm=self.comm_block,
                                          parent_rank=self.parent_rank,
@@ -213,7 +213,7 @@ class MPIManager(object):
         else:  # Single Process mode
             from single_process import MPISingleWorker
             self.process = MPISingleWorker(data=self.data, algo=self.algo,
-                                           model_builder=self.model_builder,
+                                           model=self.model,
                                            num_epochs=self.num_epochs,
                                            verbose=self.verbose,
                                            monitor=self.monitor,
@@ -250,12 +250,6 @@ class MPIManager(object):
         if self.process.process_comm is not None:
             logging.debug("holding on %d", self.process.process_comm.Get_size())
             self.process.process_comm.Barrier()
-            if self.model_builder.get_backend_name() == 'pytorch':
-                import horovod.torch as hvd
-            else:
-                import horovod.keras as hvd
-            logging.debug("Shutting down Horovod")
-            hvd.shutdown()
         if self.comm_block is not None:
             self.comm_block.Free()
         if self.comm_masters is not None:

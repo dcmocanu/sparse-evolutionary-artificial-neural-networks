@@ -22,7 +22,7 @@ class Algo(object):
     # available options and their default values
     supported_opts = {'loss': 'binary_crossentropy',
                       'validate_every': 1000,
-                      'sync_every': 10,
+                      'sync_every': 1,
                       'mode': 'sgd',
                       'worker_optimizer': 'sgd',
                       'worker_optimizer_params': '{}',
@@ -152,9 +152,6 @@ class Algo(object):
         if self.mode == 'easgd':
             return self.get_elastic_update(weights, update)
         else:
-            # if not weights['w']:
-            #     new_weights = update
-            # else:
             new_weights = self.optimizer.apply_update(weights, update)
             return new_weights
 

@@ -142,7 +142,7 @@ class MPIProcess(object):
         return self._is_shadow
 
     def build_model(self):
-        self.weights = copy.deepcopy(self.model.get_weights())
+        self.weights = self.model.get_weights()
         self.update = self.model.format_update()
 
     def check_sanity(self):
@@ -201,7 +201,8 @@ class MPIProcess(object):
             #self.logger.info(f"Master {self.update}")
 
             self.weights = self.algo.apply_update(self.weights, self.update)
-            self.model.set_weights(copy.deepcopy(self.weights))
+            self.model.set_weights(self.weights)
+            #self.logger.info(f"Master {self.weights}")
 
     ### MPI-related functions below ###
 
@@ -392,13 +393,19 @@ class MPIProcess(object):
               obj: list of destination arrays
               tag: MPI tag accompanying the message
               add_to_existing: if true, add to existing object instead of replacing"""
-        if add_to_existing:
+        if False:
+
             # TODO this needs some work
-            tmp = weights_from_shapes([w.shape for w in obj])
-            self.recv_arrays(tmp, tag=tag, comm=comm, source=source)
-            for i in range(len(obj)):
-                obj[i] += tmp[i]
-            return
+            tmp = self.model.format_update()
+            tmp = self.recv_arrays(tmp, tag=tag, comm=comm, source=source)
+            if obj:
+                for (id1, b), (id2, pdd) in zip(obj['b'].items(), tmp['b'].items()):
+                    obj['b'][id1] = b + pdd
+                for (id1, w), (id2, pdw) in zip(obj['w'].items(), tmp['w'].items()):
+                    obj['w'][id1] = w + pdw
+            else:
+                obj = tmp
+            return obj
         #if tag =='update': self.logger.info(f'tmp {tag}')
         #if tag =='update': self.logger.info(f'tmp {obj}')
         return self.recv(obj, tag, comm=comm, source=source, buffer=False)
@@ -500,23 +507,24 @@ class MPIWorker(MPIProcess):
 
         # periodically check this request to see if the parent has told us to stop training
         exit_request = self.recv_exit_from_parent()
-        self.logger.info(f"Periodically check this request to see if the parent has told us to stop training {exit_request}")
 
         for epoch in range(1, self.num_epochs + 1):
             self.logger.info("Beginning epoch {:d}".format(self.epoch + epoch))
             Trace.begin("epoch")
 
+            self.data.shuffle()
             epoch_metrics = np.zeros((1,))
             i_batch = 0
 
             for i_batch, batch in enumerate(self.data.generate_data()):
+
                 if self.process_comm:
                     self.logger.info("broadcast the weights to all processes")
                     ## broadcast the weights to all processes
                     self.bcast_weights(comm=self.process_comm)
                     if self.process_comm.Get_rank() != 0:
                         self.model.set_weights(self.weights)
-
+                self.old = copy.deepcopy(self.weights)
                 Trace.begin("train_on_batch")
                 train_metrics = self.model.train_on_batch(x=batch[0], y=batch[1])
                 Trace.end("train_on_batch")
@@ -524,6 +532,7 @@ class MPIWorker(MPIProcess):
                 if epoch_metrics.shape != train_metrics.shape:
                     epoch_metrics = np.zeros(train_metrics.shape)
                 epoch_metrics += train_metrics
+
                 if self.algo.should_sync():
                     #self.logger.info(f"Worker {self.model.model.w[1][0]}")
                     self.sync_with_parent()
@@ -567,7 +576,7 @@ class MPIWorker(MPIProcess):
     @trace
     def compute_update(self):
         """Compute the update from the new and old sets of model weights"""
-        self.update = self.algo.compute_update(self.weights, self.model.get_weights())
+        self.update = self.algo.compute_update(self.old, self.model.get_weights())
 
     def await_signal_from_parent(self):
         """Wait for 'train' signal from parent process"""
@@ -618,11 +627,7 @@ class MPIMaster(MPIProcess):
         self.patience = (early_stopping if type(early_stopping) == tuple else tuple(
             map(lambda s: float(s) if s.replace('.', '').isdigit() else s,
                 early_stopping.split(',')))) if early_stopping else None
-        ## a couple of example
-        ##self.target_metric = ('val_acc','>', 0.97)
-        # self.patience = ('val_loss','~<',4)
-        # self.target_metric = ('combined_model:val_loss','<',1)#('val_acc','>', 0.97)
-        # self.patience = ('combined_model:val_loss','~<',2)
+
         self.num_workers = child_comm.Get_size() - 1  # all processes but one are workers
         self.num_sync_workers = num_sync_workers
         info = ("Creating MPIMaster with rank {0} and parent rank {1}. "
@@ -790,10 +795,8 @@ class MPIMaster(MPIProcess):
 
         self.logger.info("Final performance of the model")
         accuracy_test, activations_test = self.model.predict(self.data.x_test, self.data.y_test)
-        accuracy_train, activations_train = self.model.predict(self.data.x_train, self.data.y_train)
         loss_test = self.model.compute_loss(self.data.y_test, activations_test)
-        loss_train = self.model.compute_loss(self.data.y_train, activations_train)
-        self.logger.info(f"Loss train: {loss_train}, Loss test: {loss_test}, Accuracy train: {accuracy_train}, Accuracy test: {accuracy_test}")
+        self.logger.info(f"Loss test: {loss_test},  Accuracy test: {accuracy_test}")
 
         self.send_exit_to_parent()
         self.send_history_to_parent()

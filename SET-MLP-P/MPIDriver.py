@@ -21,9 +21,22 @@ from logger import initialize_logger
 # size = MPI.COMM_WORLD.Get_size()
 # rank = MPI.COMM_WORLD.Get_rank()
 # import pydevd_pycharm
-# port_mapping = [61263, 61264, 61268]
+# port_mapping = [56131, 56135]
 # pydevd_pycharm.settrace('localhost', port=port_mapping[rank], stdoutToServer=True, stderrToServer=True)
 
+
+def shared_partitions(n, num_workers, batch_size):
+    # remove last data point
+    dinds = list(range(n))
+    num_batches = n // batch_size
+    worker_size = num_batches // num_workers
+
+    data = dict.fromkeys(list(range(num_workers)))
+
+    for w in range(num_workers):
+        data[w] = dinds[w * batch_size * worker_size: (w+1) * batch_size * worker_size]
+
+    return data
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -124,7 +137,7 @@ if __name__ == '__main__':
                         help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--n-training-samples', type=int, default=100000, metavar='N',
+    parser.add_argument('--n-training-samples', type=int, default=50000, metavar='N',
                         help='Number of training samples')
     parser.add_argument('--n-testing-samples', type=int, default=10000, metavar='N',
                         help='Number of testing samples')
@@ -169,16 +182,25 @@ if __name__ == '__main__':
         'n_testing_samples': n_testing_samples,
     }
 
-    X_train, Y_train, X_test, Y_test = load_cifar10_data(2000, 1000)
+    X_train, Y_train, X_test, Y_test = load_cifar10_data(n_training_samples, n_testing_samples)
 
     comm = MPI.COMM_WORLD.Dup()
+    partition = shared_partitions(n_training_samples, comm.Get_size()-1, batch_size)
 
     model_weights = None
+    rank = comm.Get_rank()
+    if rank != 0:
+        data = Data(batch_size=batch_size, x_train=X_train[partition[rank-1]], y_train=Y_train[partition[rank-1]],
+                    x_test=X_test, y_test=Y_test)
+    else:
+        data = Data(batch_size=batch_size, x_train=None,
+                    y_train=None,
+                    x_test=X_test, y_test=Y_test)
 
-    data = Data(batch_size=batch_size, x_train=X_train, y_train=Y_train, x_test=X_test, y_test=Y_test)
     # We initialize the Data object with the training data list
     # so that we can use it to count the number of training examples
-    validate_every = int(data.x_train.shape[0] / batch_size)
+    validate_every = int(X_train.shape[0] / batch_size)
+    del X_train, Y_train, X_test, Y_test
 
     # Some input arguments may be ignored depending on chosen algorithm
     algo = Algo(optimizer='sgd', loss='binary_crossentropy', validate_every=validate_every,
@@ -190,8 +212,8 @@ if __name__ == '__main__':
 
     # Creating the MPIManager object causes all needed worker and master nodes to be created
     manager = MPIManager(comm=comm, data=data, algo=algo, model=model,
-                         num_epochs=args.epochs, x_train=X_train, y_train=Y_train, x_test=X_test, y_test=Y_test,
-                         num_masters=1, num_processes=4,
+                         num_epochs=args.epochs, num_masters=1,
+                         num_processes=args.processes,
                          synchronous=True,
                          verbose=True, monitor=False,
                          early_stopping=False,
@@ -200,7 +222,7 @@ if __name__ == '__main__':
     )
 
     # Process 0 launches the training procedure
-    if comm.Get_rank() == 0:
+    if rank == 0:
         logging.debug('Training configuration: %s', algo.get_config())
 
         t_0 = time()

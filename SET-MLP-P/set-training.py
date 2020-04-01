@@ -1,11 +1,9 @@
 from set_mlp import *
-from parameter_server import *
 import time
 import argparse
-from parameter_server import *
 import os
 from PIL import Image
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 
 # **** change the warning level ****
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -16,9 +14,9 @@ parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=3000, metavar='N',
                     help='input batch size for testing (default: 1000)')
-parser.add_argument('--epochs', type=int, default=100, metavar='N',
+parser.add_argument('--epochs', type=int, default=5, metavar='N',
                     help='number of epochs to train (default: 10)')
-parser.add_argument('--lr', type=float, default=0.05, metavar='LR',
+parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                     help='learning rate (default: 0.01)')
 parser.add_argument('--lr-rate-decay', type=float, default=0.0, metavar='LRD',
                     help='learning rate decay (default: 0)')
@@ -39,7 +37,7 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
-parser.add_argument('--n-training-samples', type=int, default=100000, metavar='N',
+parser.add_argument('--n-training-samples', type=int, default=50000, metavar='N',
                     help='Number of training samples')
 parser.add_argument('--n-testing-samples', type=int, default=10000, metavar='N',
                     help='Number of testing samples')
@@ -159,7 +157,7 @@ if __name__ == "__main__":
 
         # Load augmented dataset
         start_time = time.time()
-        X_train, Y_train, X_test, Y_test = load_augmented_cifar10_parallel(n_training_samples, n_testing_samples)
+        X_train, Y_train, X_test, Y_test = load_cifar10_data(n_training_samples, n_testing_samples)
         step_time = time.time() - start_time
         print("Loading augmented dataset time: ", step_time)
 
@@ -167,28 +165,18 @@ if __name__ == "__main__":
         # X_train, Y_train, X_test, Y_test = load_cifar10_data(n_training_samples, n_testing_samples)
 
         # Create SET-MLP (MLP with adaptive sparse connectivity trained with Sparse Evolutionary Training)
-        # print("Number of neurons per layer:", X_train.shape[1], n_hidden_neurons, n_hidden_neurons,
-        # n_hidden_neurons, Y_train.shape[1])
-        # Train SET
-        # set_mlp = SET_MLP((X_train.shape[1], n_hidden_neurons, n_hidden_neurons, n_hidden_neurons,
-        #                    Y_train.shape[1]), (Relu, Relu, Relu, Sigmoid), **config)
-        # train SET-MLP
-        # set_mlp.fit(X_train, Y_train, X_test, Y_test, batch_size, testing=True,
-        #             save_filename="Results/set_mlp_" + str(n_training_samples) + "_training_samples_e" + str(
-        #                 epsilon) + "_rand" + str(i))
+        print("Number of neurons per layer:", X_train.shape[1], n_hidden_neurons, n_hidden_neurons,
+        n_hidden_neurons, Y_train.shape[1])
 
-        # Instantiate parameter server
-        ps = ParameterServer(X_train, Y_train, X_test, Y_test, **config)
-
-        # Initialize workers on the server
-        ps.initiate_workers()
-
-        # Train SET model
+        set_mlp = SET_MLP((X_train.shape[1], n_hidden_neurons, n_hidden_neurons, n_hidden_neurons,
+                           Y_train.shape[1]), (Relu, Relu, Relu, Sigmoid), **config)
         start_time = time.time()
-        ps.train()
+        set_mlp.fit(X_train, Y_train, X_test, Y_test, batch_size, testing=True,
+                    save_filename="Results/set_mlp_" + str(n_training_samples) + "_training_samples_e" + str(
+                        epsilon) + "_rand" + str(i))
         step_time = time.time() - start_time
         print("\nTotal training time: ", step_time)
 
         # Test SET-MLP
-        accuracy, _ = ps.predict(X_test, Y_test, batch_size=1)
+        accuracy, _ = set_mlp.predict(X_test, Y_test, batch_size=1)
         print("\nAccuracy of the last epoch on the testing data: ", accuracy)

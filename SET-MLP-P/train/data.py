@@ -46,6 +46,12 @@ class Data(object):
     def count_data(self):
         return self.x_train.shape[0]
 
+    def shuffle(self):
+        seed = np.arange(self.x_train.shape[0])
+        np.random.shuffle(seed)
+        self.x_train = self.x_train[seed]
+        self.y_train = self.y_train[seed]
+
     def is_numpy_array(self, data):
         return isinstance(data, np.ndarray)
 

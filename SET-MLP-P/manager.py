@@ -55,7 +55,7 @@ class MPIManager(object):
           verbose: whether to make MPIProcess objects verbose
     """
 
-    def __init__(self, comm, data, algo, model, num_epochs, x_train, y_train, x_test, y_test, num_masters=1, num_processes=6, synchronous=False,
+    def __init__(self, comm, data, algo, model, num_epochs, num_masters=1, num_processes=6, synchronous=False,
                  verbose=False, custom_objects={}, early_stopping=None, target_metric=None,
                  monitor=False, thread_validation=False, checkpoint=None, checkpoint_interval=5):
         """Create MPI communicator(s) needed for training, and create worker
@@ -89,11 +89,6 @@ class MPIManager(object):
         self.worker_id = -1
 
         self.num_epochs = num_epochs
-
-        self.x_train = x_train
-        self.y_train = y_train
-        self.x_test = x_test
-        self.y_test = y_test
 
         self.synchronous = synchronous
         self.verbose = verbose

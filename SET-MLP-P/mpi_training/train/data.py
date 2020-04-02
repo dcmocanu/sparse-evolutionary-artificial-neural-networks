@@ -5,10 +5,12 @@ import logging
 
 
 class Data(object):
-    """Class providing an interface to the input training data.
+    """Class providing an interface to the input training and testing data.
         Attributes:
-          x: array of data points to use for training
-          y: array of labels to use for training
+          x_train: array of data points to use for training
+          y_train: array of labels to use for training
+          x_test: array of data points to use for testing
+          y_test: array of labels to use for testing
           batch_size: size of training batches
     """
 

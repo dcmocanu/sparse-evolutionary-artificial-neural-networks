@@ -13,7 +13,7 @@ import time
 
 
 class Monitor(object):
-    """ Class that monitors GPU utilization for a given time """
+    """ Class that monitors CPU utilization for a given time """
 
     def __init__(self, sampling_rate=None, pid=None):
         self.sampling_rate = sampling_rate if sampling_rate is not None else 0.5
@@ -35,10 +35,6 @@ class Monitor(object):
                     self.gpu = handle
 
         self.accounting_enabled = pynvml.nvmlDeviceGetAccountingMode(self.gpu) == pynvml.NVML_FEATURE_ENABLED
-
-        # Clear accounting statistics (requires root privileges)
-        # pynvml.nvmlDeviceSetAccountingMode(self.gpu, pynvml.NVML_FEATURE_DISABLED)
-        # pynvml.nvmlDeviceSetAccountingMode(self.gpu, pynvml.NVML_FEATURE_ENABLED)
 
     def _monitor(self):
         pynvml.nvmlInit()

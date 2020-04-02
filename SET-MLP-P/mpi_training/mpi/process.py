@@ -1,19 +1,17 @@
 ### MPIWorker and MPIMaster classes
 
-import os, sys, json
+import os, json
 import numpy as np
 import copy
-import socket
 import time
-import threading, queue
 import logging
 
 from mpi4py import MPI
 
-from train.monitor import Monitor
-from train.trace import Trace, trace
-from utils import Error, weights_from_shapes, shapes_from_weights
-from logger import get_logger, set_logging_prefix
+from mpi_training.train.monitor import Monitor
+from mpi_training.train.trace import Trace, trace
+from mpi_training.utils import Error
+from mpi_training.logger import get_logger, set_logging_prefix
 
 
 ### Classes ###

@@ -1,15 +1,15 @@
 import argparse
 import logging
-from set_mlp import *
+from models.set_mlp import *
 from keras.datasets import cifar10
 
 from mpi4py import MPI
 from time import time
-from manager import MPIManager
-from train.algo import Algo
-from train.data import Data
-from train.model import MPIModel
-from logger import initialize_logger
+from mpi_training.mpi.manager import MPIManager
+from mpi_training.train.algo import Algo
+from mpi_training.train.data import Data
+from mpi_training.train.model import MPIModel
+from mpi_training.logger import initialize_logger
 
 # Debugging with size > 1
 # size = MPI.COMM_WORLD.Get_size()
@@ -35,6 +35,8 @@ def shared_partitions(n, num_workers, batch_size):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('--monitor', help='Monitor cpu and gpu utilization', default=False, action='store_true')
+    parser.add_argument('--verbose', help='display metrics for each training batch', default=False, action='store_true')
 
     # Configuration of network topology
     parser.add_argument('--masters', help='number of master processes', default=1, type=int)
@@ -51,8 +53,8 @@ if __name__ == '__main__':
     parser.add_argument('--worker-optimizer', help='optimizer for workers to use',
                         dest='worker_optimizer', default='sgd')
     parser.add_argument('--worker-optimizer-params',
-                        help='worker optimizer parameters (string representation of a dict)',
-                        dest='worker_optimizer_params', default='{}')
+                        help='worker optimizer parameters',
+                        dest='worker_optimizer_params', default={})
     parser.add_argument('--sync-every', help='how often to sync weights with master',
                         default=1, type=int, dest='sync_every')
     parser.add_argument('--mode', help='Mode of operation.'
@@ -76,7 +78,7 @@ if __name__ == '__main__':
 
     # Model configuration
     parser.add_argument('--batch-size', type=int, default=128, help='input batch size for training (default: 64)')
-    parser.add_argument('--epochs', type=int, default=20,  help='number of epochs to train (default: 10)')
+    parser.add_argument('--epochs', type=int, default=5,  help='number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=0.05, help='learning rate (default: 0.01)')
     parser.add_argument('--lr-rate-decay', type=float, default=0.0, help='learning rate decay (default: 0)')
     parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum (default: 0.5)')
@@ -121,7 +123,8 @@ if __name__ == '__main__':
     X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
 
     comm = MPI.COMM_WORLD.Dup()
-    partition = shared_partitions(args.n_training_samples, comm.Get_size()-1, args.batch_size)
+    if comm.Get_size() > 1:
+        partition = shared_partitions(args.n_training_samples, comm.Get_size()-1, args.batch_size)
 
     model_weights = None
     rank = comm.Get_rank()
@@ -137,22 +140,35 @@ if __name__ == '__main__':
     del X_train, Y_train, X_test, Y_test
 
     # Some input arguments may be ignored depending on chosen algorithm
-    algo = Algo(optimizer='sgd', loss='binary_crossentropy', validate_every=validate_every,
-                sync_every=1, worker_optimizer='sgd',
-                worker_optimizer_params={})
+    if args.mode == 'easgd':
+        algo = Algo(None, loss=args.loss, validate_every=validate_every,
+                    mode='easgd', sync_every=args.sync_every,
+                    worker_optimizer=args.worker_optimizer,
+                    worker_optimizer_params=args.worker_optimizer_params,
+                    elastic_force=args.elastic_force / (comm.Get_size() - 1),
+                    elastic_lr=args.elastic_lr,
+                    elastic_momentum=args.elastic_momentum)
+    elif args.mode == 'gem':
+        algo = Algo('gem', loss=args.loss, validate_every=validate_every,
+                    mode='gem', sync_every=args.sync_every,
+                    worker_optimizer=args.worker_optimizer,
+                    worker_optimizer_params=args.worker_optimizer_params,
+                    learning_rate=args.gem_lr, momentum=args.gem_momentum, kappa=args.gem_kappa)
+    else:
+        algo = Algo(args.optimizer, loss=args.loss, validate_every=validate_every,
+                    sync_every=args.sync_every, worker_optimizer=args.worker_optimizer,
+                    worker_optimizer_params=args.worker_optimizer_params)
 
     dimensions = (3072, 4000, 1000, 4000, 10)
     model = MPIModel(model=SET_MLP(dimensions, (Relu, Relu, Relu, Sigmoid), **model_config))
 
     # Creating the MPIManager object causes all needed worker and master nodes to be created
     manager = MPIManager(comm=comm, data=data, algo=algo, model=model,
-                         num_epochs=args.epochs, num_masters=1,
-                         num_processes=args.processes,
-                         synchronous=True,
-                         verbose=True, monitor=False,
-                         early_stopping=False,
-                         target_metric=None,
-                         thread_validation=False
+                         num_epochs=args.epochs, num_masters=args.masters,
+                         num_processes=args.processes, synchronous=args.synchronous,
+                         verbose=args.verbose, monitor=args.monitor,
+                         early_stopping=args.early_stopping,
+                         target_metric=args.target_metric
     )
 
     # Process 0 launches the training procedure

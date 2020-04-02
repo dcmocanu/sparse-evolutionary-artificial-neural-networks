@@ -1,6 +1,6 @@
 import numpy as np
 import copy
-from set_mlp import *
+from models.set_mlp import *
 import logging
 
 

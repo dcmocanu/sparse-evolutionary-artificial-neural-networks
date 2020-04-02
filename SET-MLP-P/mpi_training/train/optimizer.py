@@ -4,11 +4,7 @@ import numpy as np
 import copy
 import pickle
 import os
-import re
 import logging
-
-from utils import weights_from_shapes
-
 
 class Optimizer(object):
     """Base class for optimization algorithms.
@@ -23,25 +19,6 @@ class Optimizer(object):
     def apply_update(self, weights, gradient):
         raise NotImplementedError
 
-    def save(self, fn = None):
-        if fn is None:
-            fn = 'master-opt-{}.algo'.format( os.getpid())
-        d= open(fn,'wb')
-        pickle.dump(self, d)
-        d.close()
-        logging.info("Saved state to %s", fn)
-
-    def load(self, fn = 'algo_.pkl'):
-        if not fn.endswith('.algo'):
-            fn = fn + '.algo'
-        try:
-            d = open(fn, 'rb')
-            new_self = pickle.load( d )
-            d.close()
-        except:
-            new_self = None
-        return new_self
-
 
 class MultiOptimizer(Optimizer):
     def __init__(self, opt, s):
@@ -53,8 +30,8 @@ class MultiOptimizer(Optimizer):
 
     def apply_update(self, weights, gradient):
         r = []
-        for o,w,g in zip(self.opts, weights, gradient):
-            r.append( o.apply_update(w,g) )
+        for o, w, g in zip(self.opts, weights, gradient):
+            r.append( o.apply_update(w, g) )
         return r
 
 

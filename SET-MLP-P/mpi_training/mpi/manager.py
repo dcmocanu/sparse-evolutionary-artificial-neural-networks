@@ -7,8 +7,8 @@ import numpy as np
 import time
 import json
 import logging
-from train.data import Data
-from utils import get_num_gpus
+from mpi_training.train.data import Data
+from mpi_training.utils import get_num_gpus
 
 
 def get_groups(comm, num_masters=1, num_processes=1):
@@ -179,7 +179,7 @@ class MPIManager(object):
 
         # Process initialization
         if comm.Get_size() != 1:
-            from process import MPIWorker, MPIMaster
+            from mpi_training.mpi.process import MPIWorker, MPIMaster
             if self.is_master:
 
                 num_sync_workers = self.get_num_sync_workers(child_comm)
@@ -206,7 +206,7 @@ class MPIManager(object):
                                          checkpoint=self.checkpoint, checkpoint_interval=self.checkpoint_interval
                                          )
         else:  # Single Process mode
-            from single_process import MPISingleWorker
+            from mpi_training.mpi.single_process import MPISingleWorker
             self.process = MPISingleWorker(data=self.data, algo=self.algo,
                                            model=self.model,
                                            num_epochs=self.num_epochs,

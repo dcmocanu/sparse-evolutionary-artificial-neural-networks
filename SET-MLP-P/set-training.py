@@ -1,4 +1,4 @@
-from set_mlp import *
+from models.set_mlp import *
 import time
 import argparse
 import os

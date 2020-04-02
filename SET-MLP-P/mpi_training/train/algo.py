@@ -20,7 +20,7 @@ class Algo(object):
           """
 
     # available options and their default values
-    supported_opts = {'loss': 'binary_crossentropy',
+    supported_opts = {'loss': 'mse',
                       'validate_every': 1000,
                       'sync_every': 1,
                       'mode': 'sgd',
@@ -156,16 +156,3 @@ class Algo(object):
         else:
             new_weights = self.optimizer.apply_update(weights, update)
             return new_weights
-
-    def save(self, fn=None):
-        if self.optimizer:
-            self.optimizer.save(fn)
-
-    def load(self, fn):
-        new_optimizer = self.optimizer.load(fn)
-        if new_optimizer is not None:
-            logging.info("Restored state from {}".format(fn))
-            self.optimizer = new_optimizer
-            self.restore = True
-        else:
-            logging.warning("Failed to restore state from {}, starting srom scratch".format(fn))

@@ -362,11 +362,11 @@ class SET_MLP:
     def train_on_batch(self, x, y):
         z, a = self._feed_forward(x, True)
         self._back_prop(z, a, y)
-        accuracy, activations = self.predict(x, y, self.batch_size)
+        accuracy, activations = self.predict(x, y)
         return self.loss.loss(y, activations), accuracy
 
     def test_on_batch(self, x, y):
-        accuracy, activations = self.predict(x, y, self.batch_size)
+        accuracy, activations = self.predict(x, y)
         return self.loss.loss(y, activations), accuracy
 
     def fit(self, x, y_true, x_test, y_test, batch_size=128, testing=True, save_filename=""):

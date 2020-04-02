@@ -1,7 +1,6 @@
 import argparse
 import logging
 from models.set_mlp import *
-from keras.datasets import cifar10
 
 from mpi4py import MPI
 from time import time
@@ -20,7 +19,6 @@ from mpi_training.logger import initialize_logger
 
 
 def shared_partitions(n, num_workers, batch_size):
-    # remove last data point
     dinds = list(range(n))
     num_batches = n // batch_size
     worker_size = num_batches // num_workers
@@ -93,7 +91,7 @@ if __name__ == '__main__':
     parser.add_argument('--log-interval', type=int, default=10,
                         help='how many batches to wait before logging training status')
     parser.add_argument('--n-training-samples', type=int, default=50000, help='Number of training samples')
-    parser.add_argument('--n-testing-samples', type=int, default=10000, help='Number of testing samples')
+    parser.add_argument('--n-testing-samples', type=int, default=1000, help='Number of testing samples')
 
     args = parser.parse_args()
 
@@ -123,20 +121,26 @@ if __name__ == '__main__':
     X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
 
     comm = MPI.COMM_WORLD.Dup()
-    if comm.Get_size() > 1:
-        partition = shared_partitions(args.n_training_samples, comm.Get_size()-1, args.batch_size)
 
     model_weights = None
     rank = comm.Get_rank()
-    if rank != 0:
-        data = Data(batch_size=args.batch_size, x_train=X_train, y_train=Y_train,
+
+    if comm.Get_size() == 1:
+        data = Data(batch_size=args.batch_size, x_train=X_train,
+                    y_train=Y_train,
                     x_test=X_test, y_test=Y_test)
     else:
-        data = Data(batch_size=args.batch_size, x_train=None,
-                    y_train=None,
-                    x_test=X_test, y_test=Y_test)
+        if rank != 0:
+            partition = shared_partitions(args.n_training_samples, comm.Get_size() - 1, args.batch_size)
+            data = Data(batch_size=args.batch_size, x_train=X_train[partition[rank-1]],
+                        y_train=Y_train[partition[rank-1]],
+                        x_test=X_test, y_test=Y_test)
+        else:
+            data = Data(batch_size=args.batch_size, x_train=None,
+                        y_train=None,
+                        x_test=X_test, y_test=Y_test)
 
-    validate_every = int(X_train.shape[0] / args.batch_size)
+    validate_every = int(X_train.shape[0] / args.batch_size * 2)
     del X_train, Y_train, X_test, Y_test
 
     # Some input arguments may be ignored depending on chosen algorithm
@@ -155,10 +159,11 @@ if __name__ == '__main__':
                     worker_optimizer_params=args.worker_optimizer_params,
                     learning_rate=args.gem_lr, momentum=args.gem_momentum, kappa=args.gem_kappa)
     else:
-        algo = Algo(args.optimizer, loss=args.loss, validate_every=validate_every,
-                    sync_every=args.sync_every, worker_optimizer=args.worker_optimizer,
-                    worker_optimizer_params=args.worker_optimizer_params)
+        algo = Algo(optimizer='sgd', loss='mse', validate_every=validate_every,
+                    sync_every=1, worker_optimizer='sgd',
+                    worker_optimizer_params={})
 
+    # Model architecture
     dimensions = (3072, 4000, 1000, 4000, 10)
     model = MPIModel(model=SET_MLP(dimensions, (Relu, Relu, Relu, Sigmoid), **model_config))
 
@@ -168,8 +173,7 @@ if __name__ == '__main__':
                          num_processes=args.processes, synchronous=args.synchronous,
                          verbose=args.verbose, monitor=args.monitor,
                          early_stopping=args.early_stopping,
-                         target_metric=args.target_metric
-    )
+                         target_metric=args.target_metric)
 
     # Process 0 launches the training procedure
     if rank == 0:
@@ -180,6 +184,9 @@ if __name__ == '__main__':
         delta_t = time() - t_0
         manager.free_comms()
         logging.info("Training finished in {0:.3f} seconds".format(delta_t))
+
+        logging.info("Final performance of the model")
+        manager.process.validate()
 
     comm.barrier()
     logging.info("Terminating")

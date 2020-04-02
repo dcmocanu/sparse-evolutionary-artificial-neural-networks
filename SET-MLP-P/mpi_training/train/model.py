@@ -29,41 +29,6 @@ class MPIModel(object):
                 for name, metric in zip(names, ametric):
                     logging.info("{0}: {1:.3f}".format(name, metric))
 
-    def get_logs(self, metrics, val=False):
-        if self.model:
-            if val:
-                return {'val_' + name: np.asscalar(metric) for name, metric in
-                        zip(self.model.metrics_names, metrics)}
-            else:
-                return {name: np.asscalar(metric) for name, metric in
-                        zip(self.model.metrics_names, metrics)}
-        else:
-            logs = []
-            for im, m in enumerate(self.models):
-                ametrics = metrics[im, ...]
-                if val:
-                    logs.append({'val_' + name: np.asscalar(metric) for name, metric in
-                                 zip(m.metrics_names, ametrics)})
-                else:
-                    logs.append({name: np.asscalar(metric) for name, metric in
-                                 zip(m.metrics_names, ametrics)})
-            return logs
-
-    def update_history(self, items, arg_hist):
-        if self.model:
-            for m, v in items.items():
-                arg_hist.setdefault(m, []).append(v)
-        else:
-            for im, (m, it) in enumerate(zip(self.models, items)):
-                m_name = "model%s" % im
-                try:
-                    m_name = m.name
-                except:
-                    logging.warning("no name attr")
-                for m, v in it.items():
-                    arg_hist.setdefault(m_name, {}).setdefault(m, []).append(v)
-        self.histories = arg_hist
-
     def format_update(self):
         if not self.model.parameters()['w']:
             return {'w': {}, 'b': {}}
@@ -88,13 +53,3 @@ class MPIModel(object):
 
     def weight_evolution(self):
         self.model.weightsEvolution_II()
-
-    def figure_of_merit(self, **args):
-        ## runs like predict trace, and provides a non differentiable figure of merit for hyper-opt
-        ## can of course be the validation loss
-        if self.model:
-            ## return a default value from the validation history
-            return (1. - self.histories['val_acc'][-1])
-            # return self.histories['val_loss'][-1]
-        else:
-            return 0.

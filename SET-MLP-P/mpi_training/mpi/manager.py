@@ -2,17 +2,11 @@
 
 from __future__ import division
 import math
-from mpi4py import MPI
-import numpy as np
-import time
-import json
 import logging
-from mpi_training.train.data import Data
-from mpi_training.utils import get_num_gpus
 
 
 def get_groups(comm, num_masters=1, num_processes=1):
-    masters = list(range(0, num_masters))  # index 0 is the uber master, the other one asre sub-masters
+    masters = list(range(0, num_masters))  # index 0 is the supervisor master, the other one are sub-masters
     n_active_master = max(num_masters - 1, 1)
     groups = [set() for _ in range(n_active_master)]
     instances_ranks = list(range(num_masters, comm.Get_size(), num_processes))
@@ -37,7 +31,7 @@ class MPIManager(object):
           process: the MPI worker or master object running on this process
           data: Data object containing information used for training/validation
           algo: Algo object containing training algorithm configuration options
-          model_builder: ModelBuilder object
+          model: Model object
           num_masters: integer indicating the number of master processes.
             If num_masters > 1, an additional master will be created to supervise all masters.
           num_workers: integer indicating the number of worker processes
@@ -47,29 +41,24 @@ class MPIManager(object):
             Process 0 is the master and the other processes are workers.
           comm_masters: MPI intracommunicator used for message passing between masters.
             (It will be None if there is only one master.)
-          train_list: list of training data file names
-          val_list: list of validation data file names
           is_master: boolean determining if this process is a master
           should_validate: boolean determining if this process should run training validation
           synchronous: whether or not to syncronize workers after each update
           verbose: whether to make MPIProcess objects verbose
     """
 
-    def __init__(self, comm, data, algo, model, num_epochs, num_masters=1, num_processes=6, synchronous=False,
-                 verbose=False, custom_objects={}, early_stopping=None, target_metric=None,
-                 monitor=False, thread_validation=False, checkpoint=None, checkpoint_interval=5):
+    def __init__(self, comm, data, algo, model, num_epochs, num_masters=1, num_processes=1, synchronous=False,
+                 verbose=False, early_stopping=None, target_metric=None, monitor=False):
         """Create MPI communicator(s) needed for training, and create worker
             or master object as appropriate.
             Params:
             comm: MPI intracommunicator containing all processes
-            data: Data object containing information used for training/validation
+            data: Data object containing information used for training/testing
             algo: Algo object containing training algorithm configuration options
-            model_builder: ModelBuilder object
-            num_masters: number of master processes
-            num_processes: number of processes that make up a worker/master (gpu allreduce)
+            model: Model object
             num_epochs: number of times to iterate over the training data
-            train_list: list of training data files
-            val_list: list of validation data files
+            num_masters: number of master processes
+            num_processes: number of processes that make up a worker/master (allreduce)
             synchronous: true if masters should operate in synchronous mode
             verbose: whether to make MPIProcess objects verbose
             monitor: whether to monitor per-process resource (CPU/GPU) usage
@@ -79,17 +68,17 @@ class MPIManager(object):
         self.model = model
         self.num_masters = num_masters
         self.num_processes = num_processes
+
         if comm.Get_size() != 1:
             n_instances, remainder = divmod(comm.Get_size() - self.num_masters, self.num_processes)
         else:
             n_instances, remainder = 1, 0
         if remainder:
             logging.info("The accounting is not correct, %d nodes are left behind", remainder)
-        self.num_workers = n_instances  # - self.num_masters
+        self.num_workers = n_instances
         self.worker_id = -1
 
         self.num_epochs = num_epochs
-
         self.synchronous = synchronous
         self.verbose = verbose
         self.monitor = monitor
@@ -98,19 +87,15 @@ class MPIManager(object):
         self.comm_instance = None
         self.is_master = None
         self.should_validate = None
-        self.custom_objects = custom_objects
         self.early_stopping = early_stopping
         self.target_metric = target_metric
-        self.thread_validation = thread_validation
-        self.checkpoint = checkpoint
-        self.checkpoint_interval = checkpoint_interval
         self.make_comms(comm)
 
     def make_comms(self, comm):
         """Define the network topology by creating communicators linking masters with their slaves.
             Set comm_block to contain one master and all of its workers.
             Set comm_masters to contain all masters, including the "super-master" supervising them.
-            Set comm_instance to contain the nodes contributing to the woker/master instance
+            Set comm_instance to contain the nodes contributing to the worker/master instance
             Define a master or worker object as appropriate for each process.
             If a worker is created, it is assigned some data files to train on.
         """
@@ -143,7 +128,7 @@ class MPIManager(object):
         if not self.is_master and self.comm_block:
             self.worker_id = self.comm_block.Get_rank()
 
-        logging.debug("processes %s", str(processes))
+        logging.info("processes %s", str(processes))
         for ipr, pr in enumerate(processes):
             if rank in pr and len(pr) > 1:
                 ## make the communicator for that process group
@@ -165,7 +150,6 @@ class MPIManager(object):
         if self.num_masters > 1:
             if self.is_master:
                 parent_comm = self.comm_masters
-                # if rank==0:
                 if self.comm_masters.Get_rank() == 0:
                     child_comm = self.comm_masters
                     self.parent_rank = None
@@ -187,10 +171,9 @@ class MPIManager(object):
                                          data=self.data, algo=self.algo, model=self.model,
                                          child_comm=child_comm, num_epochs=self.num_epochs,
                                          num_sync_workers=num_sync_workers,
-                                         verbose=self.verbose, custom_objects=self.custom_objects,
-                                         early_stopping=self.early_stopping, target_metric=self.target_metric,
-                                         threaded_validation=self.thread_validation,
-                                         checkpoint=self.checkpoint, checkpoint_interval=self.checkpoint_interval
+                                         verbose=self.verbose,
+                                         early_stopping=self.early_stopping,
+                                         target_metric=self.target_metric
                                          )
             else:
 
@@ -201,9 +184,7 @@ class MPIManager(object):
                                          parent_rank=self.parent_rank,
                                          num_epochs=self.num_epochs,
                                          verbose=self.verbose,
-                                         monitor=self.monitor,
-                                         custom_objects=self.custom_objects,
-                                         checkpoint=self.checkpoint, checkpoint_interval=self.checkpoint_interval
+                                         monitor=self.monitor
                                          )
         else:  # Single Process mode
             from mpi_training.mpi.single_process import MPISingleWorker
@@ -211,19 +192,7 @@ class MPIManager(object):
                                            model=self.model,
                                            num_epochs=self.num_epochs,
                                            verbose=self.verbose,
-                                           monitor=self.monitor,
-                                           custom_objects=self.custom_objects,
-                                           early_stopping=self.early_stopping,
-                                           target_metric=self.target_metric,
-                                           checkpoint=self.checkpoint, checkpoint_interval=self.checkpoint_interval)
-
-    def figure_of_merit(self):
-        ##if (self.comm_masters and self.comm_masters.Get_rank() == 0) or (self.comm_block.Get_rank() == 0):
-        if self.parent_rank is None:
-            ## only the uber-master returns a valid fom
-            return self.process.model.figure_of_merit()
-        else:
-            return None
+                                           monitor=self.monitor)
 
     def train(self):
         if self.parent_rank is None:
@@ -251,78 +220,3 @@ class MPIManager(object):
             self.comm_masters.Free()
         if self.comm_instance is not None:
             self.comm_instance.Free()
-
-
-class MPIKFoldManager(MPIManager):
-    def __init__(self, NFolds, comm, data, algo, model_builder, num_epochs, train_list,
-                 val_list, num_masters=1,
-                 num_process=1,
-                 synchronous=False,
-                 verbose=False, custom_objects={},
-                 early_stopping=None, target_metric=None,
-                 monitor=False,
-                 checkpoint=None, checkpoint_interval=5):
-        self.comm_world = comm
-        self.comm_fold = None
-        self.fold_num = None
-        if NFolds == 1:
-            ## make a regular MPIManager
-            self.manager = MPIManager(comm, data, algo, model_builder, num_epochs, train_list,
-                                      val_list, num_masters, num_process,
-                                      synchronous,
-                                      verbose, custom_objects,
-                                      early_stopping, target_metric,
-                                      monitor,
-                                      checkpoint=checkpoint, checkpoint_interval=checkpoint_interval)
-            return
-
-        if int(comm.Get_size() / float(NFolds)) <= 1:
-            logging.warning("There is less than one master+one worker per fold, this isn't going to work")
-
-        ## actually split further the work in folds
-        rank = comm.Get_rank()
-        fold_num = int(rank * NFolds / comm.Get_size())
-        self.fold_num = fold_num
-        self.comm_fold = comm.Split(fold_num)
-        logging.debug(
-            "For node {}, with block rank {}, send in fold {}".format(MPI.COMM_WORLD.Get_rank(), rank, fold_num))
-        self.manager = None
-
-        if val_list:
-            logging.warning("MPIKFoldManager would not expect to be given a validation list")
-        all_files = train_list + val_list
-        from sklearn.model_selection import KFold
-        folding = KFold(n_splits=NFolds)
-        folds = list(folding.split(all_files))
-        train, test = folds[fold_num]
-        train_list_on_fold = list(np.asarray(all_files)[train])
-        val_list_on_fold = list(np.asarray(all_files)[test])
-        self.manager = MPIManager(self.comm_fold, data, algo, model_builder, num_epochs, train_list_on_fold,
-                                  val_list_on_fold, num_masters, num_process,
-                                  synchronous,
-                                  verbose, custom_objects,
-                                  early_stopping, target_metric, monitor,
-                                  checkpoint=checkpoint, checkpoint_interval=checkpoint_interval)
-
-    def free_comms(self):
-        self.manager.free_comms()
-
-    def train(self):
-        self.manager.train()
-
-    def figure_of_merit(self):
-        fom = self.manager.figure_of_merit()
-        if self.comm_fold is not None:
-            foms = self.comm_world.allgather(fom)
-            # filter out the None values
-            foms = list(filter(None, foms))
-            ## make the average and rms
-            avg_fom = np.mean(foms)
-            std_fom = np.std(foms)
-            if self.comm_fold.Get_rank() == 0:
-                logging.info("Figure of merits over {} folds is {}+/-{}".format(len(foms), avg_fom, std_fom))
-            return avg_fom
-        else:
-            if fom is not None:
-                logging.info("Figure of merits from single value {}".format(fom))
-            return fom

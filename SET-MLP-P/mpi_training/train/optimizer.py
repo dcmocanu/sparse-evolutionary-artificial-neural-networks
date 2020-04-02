@@ -55,7 +55,7 @@ class VanillaSGD(Optimizer):
                 new_weights['b'][id1] = b - self.learning_rate*pdd
 
         new_weights['pdw'] = gradient['pdw']
-        new_weights['pdd'] = new_weights['pdd']
+        new_weights['pdd'] = gradient['pdd']
 
         return new_weights
 

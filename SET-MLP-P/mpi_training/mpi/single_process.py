@@ -1,32 +1,20 @@
-import os,sys,json
 import numpy as np
-import socket
-import time
 import logging
-
-from mpi_training.train.monitor import Monitor
-from mpi_training.utils import Error, weights_from_shapes, shapes_from_weights
 from mpi_training.mpi.process import MPIWorker, MPIMaster
 
 
 class MPISingleWorker(MPIWorker):
     """This class trains its model with no communication to other processes"""
-    def __init__(self, num_epochs, data, algo, model,
-                verbose, monitor, custom_objects,
-                early_stopping, target_metric,
-                checkpoint, checkpoint_interval):
+    def __init__(self, num_epochs, data, algo, model, verbose, monitor):
 
         self.has_parent = False
 
         self.best_val_loss = None
-        self.target_metric = (target_metric if type(target_metric)==tuple else tuple(map(lambda s : float(s) if s.replace('.','').isdigit() else s, target_metric.split(',')))) if target_metric else None
-        self.patience = (early_stopping if type(early_stopping)==tuple else tuple(map(lambda s : float(s) if s.replace('.','').isdigit() else s, early_stopping.split(',')))) if early_stopping else None
 
         super(MPISingleWorker, self).__init__(data, algo, model, process_comm=None, parent_comm=None, parent_rank=None,
-            num_epochs=num_epochs, verbose=verbose, monitor=monitor, custom_objects=custom_objects,
-            checkpoint=checkpoint, checkpoint_interval=checkpoint_interval)
+            num_epochs=num_epochs, verbose=verbose, monitor=monitor)
 
-    def train(self):
+    def train(self, testing=False):
         self.check_sanity()
 
         for epoch in range(1, self.num_epochs + 1):
@@ -38,6 +26,7 @@ class MPISingleWorker(MPIWorker):
 
             for i_batch, batch in enumerate(self.data.generate_data()):
                 train_metrics = self.model.train_on_batch(x=batch[0], y=batch[1])
+
                 if epoch_metrics.shape != train_metrics.shape:
                     epoch_metrics = np.zeros(train_metrics.shape)
                 epoch_metrics += train_metrics
@@ -48,23 +37,28 @@ class MPISingleWorker(MPIWorker):
                 self.algo.set_worker_model_weights(self.model, self.weights)
                 ######
 
-                if self._short_batches and i_batch > self._short_batches: break
-
             if self.monitor:
                 self.monitor.stop_monitor()
             epoch_metrics = epoch_metrics / float(i_batch+1)
-            #l = self.model.get_logs( epoch_metrics )
-            #self.update_history( l )
+
+            if testing:
+                self.logger.info("Epoch metrics:")
+                self.print_metrics(epoch_metrics)
 
             if self.stop_training:
                 break
 
             self.validate()
 
-        logging.info("Signing off")
-        if self.monitor:
-            self.update_monitor( self.monitor.get_stats() )
+            if epoch < self.num_epochs:  # do not change connectivity pattern after the last epoch
+                self.model.weight_evolution()
+                self.weights = self.model.get_weights()
 
+        logging.info("Signing off")
+        self.model.set_weights(self.weights)
+
+        if self.monitor:
+            self.update_monitor(self.monitor.get_stats())
 
     def validate(self):
         return MPIMaster.validate_aux(self, self.weights, self.model)

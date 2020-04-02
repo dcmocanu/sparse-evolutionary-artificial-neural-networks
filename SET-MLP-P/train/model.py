@@ -10,6 +10,7 @@ class MPIModel(object):
 
     def __init__(self, model=None, models=None):
         self.model = model
+        self.batch_size = self.model.batch_size
         self.models = models
         self.histories = {}
         if model and models:
@@ -84,6 +85,9 @@ class MPIModel(object):
 
     def compute_loss(self, y, activations):
         return self.model.loss.loss(y, activations)
+
+    def weight_evolution(self):
+        self.model.weightsEvolution_II()
 
     def figure_of_merit(self, **args):
         ## runs like predict trace, and provides a non differentiable figure of merit for hyper-opt

@@ -70,12 +70,15 @@ class VanillaSGD(Optimizer):
         """Move weights in the direction of the gradient, by the amount of the
             learning rate."""
 
-        new_weights = {'w': {}, 'b': {}}
+        new_weights = {'w': {}, 'b': {}, 'pdw': {}, 'pdd': {}}
         for (id1, w), (id2, pdw) in zip(weights['w'].items(), gradient['w'].items()):
                 new_weights['w'][id1] = w - self.learning_rate*pdw
 
         for (id1, b), (id2, pdd) in zip(weights['b'].items(), gradient['b'].items()):
                 new_weights['b'][id1] = b - self.learning_rate*pdd
+
+        new_weights['pdw'] = gradient['pdw']
+        new_weights['pdd'] = new_weights['pdd']
 
         return new_weights
 

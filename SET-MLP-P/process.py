@@ -494,7 +494,7 @@ class MPIWorker(MPIProcess):
         self.apply_update()
         self.algo.set_worker_model_weights(self.model, self.weights)
 
-    def train(self, testing=True):
+    def train(self, testing=False):
         """  Wait for the signal to train. Then train for num_epochs epochs.
             In each step, train on one batch of input data, then send the update to the master
             and wait to receive a new set of weights.  When done, send 'exit' signal to parent.
@@ -694,6 +694,12 @@ class MPIMaster(MPIProcess):
                     self.apply_update()
                 else:
                     self.apply_update()
+
+                    # if (self.time_step % self.algo.validate_every == 0) or \
+                    #    (self._short_batches and self.time_step % self._short_batches == 0):
+                    #         self.model.weight_evolution()
+                    #         self.weights = self.model.get_weights()
+
                     self.sync_parent()
                     self.sync_children()
 
@@ -770,6 +776,7 @@ class MPIMaster(MPIProcess):
         """
         Trace.begin("train")
         self.start_time = time.time()
+
         self.check_sanity()
         self.bcast_weights(comm=self.child_comm)
         self.signal_children()
@@ -844,11 +851,7 @@ class MPIMaster(MPIProcess):
             self.validation_queue.task_done()
 
     def validate(self, weights):
-        if self.threaded_validation:
-            model = self.validation_model
-            self.validation_queue.put((weights, model))
-        else:
-            return self.validate_aux(weights, self.model)
+        return self.validate_aux(weights, self.model)
 
     def validate_aux(self, weights, model):
         """Compute the loss on the validation data.
@@ -857,7 +860,6 @@ class MPIMaster(MPIProcess):
         if self.has_parent:
             return {}
         model.set_weights(weights)
-
 
         self.logger.debug("Starting validation")
         val_metrics = np.zeros((1,))

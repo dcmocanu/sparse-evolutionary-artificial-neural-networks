@@ -2,8 +2,6 @@ from set_mlp import *
 import time
 import argparse
 import os
-from PIL import Image
-from concurrent.futures import ProcessPoolExecutor
 
 # **** change the warning level ****
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -14,9 +12,9 @@ parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=3000, metavar='N',
                     help='input batch size for testing (default: 1000)')
-parser.add_argument('--epochs', type=int, default=5, metavar='N',
+parser.add_argument('--epochs', type=int, default=20, metavar='N',
                     help='number of epochs to train (default: 10)')
-parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
+parser.add_argument('--lr', type=float, default=0.05, metavar='LR',
                     help='learning rate (default: 0.01)')
 parser.add_argument('--lr-rate-decay', type=float, default=0.0, metavar='LRD',
                     help='learning rate decay (default: 0)')
@@ -45,75 +43,6 @@ parser.add_argument('--n-processes', type=int, default=6, metavar='N',
                     help='how many training processes to use (default: 2)')
 parser.add_argument('--cuda', action='store_true', default=False,
                     help='enables CUDA training')
-
-# Augmented dataset path
-cur_dir = os.path.dirname(os.path.abspath(__file__))
-path_to_data = ['dataset']
-images_dirs = os.path.join(cur_dir, *path_to_data)
-
-
-def load_images(curr_dir, label):
-    print(f"Loading class {label} images ...")
-    class_dir = os.path.join(images_dirs, curr_dir)
-
-    x_train = []
-    y_train = []
-
-    # Iterate through the images in the given the folder
-    for image_path in os.listdir(class_dir):
-        # Create the full input path and read the file
-        input_path = os.path.join(class_dir, image_path)
-        image = Image.open(input_path)
-        x_train.append(np.asarray(image))
-        y_train.append(label)
-
-    x_train = np.asarray(x_train).reshape((-1, 32, 32, 3))
-    y_train = np.asarray(y_train).flatten()
-
-    print(f"Finished loading for class {label} images ...")
-    return x_train, y_train
-
-
-def load_augmented_cifar10_parallel(n_train_samples, n_test_samples):
-    class_dirs = os.listdir(images_dirs)
-
-    x_train = np.array([]).reshape((-1, 32, 32, 3))
-    y_train = np.array([])
-
-    # Loop through the data folders with training data
-    with ProcessPoolExecutor(max_workers=12) as executor:
-        results = executor.map(load_images, class_dirs, range(10))
-        for i, res in enumerate(results):
-            x_train = np.concatenate((x_train, res[0]), axis=0)
-            y_train = np.concatenate((y_train, res[1]))
-
-    (_, _), (x_test, y_test) = cifar10.load_data()
-    y_train = np_utils.to_categorical(y_train, 10)
-    y_test = np_utils.to_categorical(y_test, 10)
-    x_train = x_train.astype('float32')
-    x_test = x_test.astype('float32')
-
-    index_train = np.arange(x_train.shape[0])
-    np.random.shuffle(index_train)
-
-    index_test = np.arange(x_test.shape[0])
-    np.random.shuffle(index_test)
-
-    # Sample dataset
-    x_train = x_train[index_train[0:n_train_samples], :]
-    y_train = y_train[index_train[0:n_train_samples], :]
-    x_test = x_test[index_test[0:n_test_samples], :]
-    y_test = y_test[index_test[0:n_test_samples], :]
-
-    # Normalize data
-    x_train_mean = np.mean(x_train, axis=0)
-    x_train_std = np.std(x_train, axis=0)
-    x_train = (x_train - x_train_mean) / x_train_std
-    x_test = (x_test - x_train_mean) / x_train_std
-
-    x_train = x_train.reshape(-1, 32 * 32 * 3).astype('float64')
-    x_test = x_test.reshape(-1, 32 * 32 * 3).astype('float64')
-    return x_train, y_train, x_test, y_test
 
 
 if __name__ == "__main__":

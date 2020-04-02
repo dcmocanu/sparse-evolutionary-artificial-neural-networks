@@ -42,6 +42,7 @@ import datetime
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import multiprocessing as mp
+from PIL import Image
 import os
 import sys
 stderr = sys.stderr
@@ -51,6 +52,11 @@ from keras.datasets import cifar10
 from keras.utils import np_utils
 sys.stderr = stderr
 
+
+# Augmented dataset path
+cur_dir = os.path.dirname(os.path.abspath(__file__))
+path_to_data = ['dataset']
+images_dirs = os.path.join(cur_dir, *path_to_data)
 
 def backpropagation_updates_Numpy(a, delta, rows, cols, out):
     for i in range(out.shape[0]):
@@ -230,11 +236,13 @@ class SET_MLP:
         #         self.w[i + 1] = res
         #         self.b[i + 1] = np.zeros(dimensions[i + 1])
         #         self.activations[i + 2] = activations[i]
-        t2 = datetime.datetime.now()
+        #t2 = datetime.datetime.now()
 
         # print("Creation sparse weights time: ", t2 - t1)
-
-        self.loss = MSE(self.activations[self.n_layers])
+        if config['loss'] == 'mse':
+            self.loss = MSE(self.activations[self.n_layers])
+        else:
+            raise NotImplementedError("The given loss function is  ot implemented")
 
     def parameters(self):
         """
@@ -244,9 +252,9 @@ class SET_MLP:
 
         params = {
             'w': self.w,
-            'b': self.b
-            #'pdw': self.pdw,
-            #'pdd': self.pdd,
+            'b': self.b,
+            'pdw': self.pdw,
+            'pdd': self.pdd,
         }
 
         return params
@@ -254,8 +262,8 @@ class SET_MLP:
     def set_parameters(self, params):
         self.w = params['w']
         self.b = params['b']
-        #self.pdw = params['pdw']
-        #self.pdd = params['pdd']
+        self.pdw = params['pdw']
+        self.pdd = params['pdd']
 
     def _feed_forward(self, x, drop=True):
         """
@@ -577,7 +585,7 @@ class SET_MLP:
 
                 # print("Number of non zeros in W and PD matrix after evolution in layer",i,[(self.w[i].data.shape[0]), (self.pdw[i].data.shape[0])])
 
-                t_ev_2 = datetime.datetime.now()
+                # t_ev_2 = datetime.datetime.now()
                 # print("Weights evolution time for layer",i,"is", t_ev_2 - t_ev_1)
 
     def predict(self, x_test, y_test, batch_size=1):
@@ -594,38 +602,38 @@ class SET_MLP:
             l = (j + 1) * batch_size
             _, a_test = self._feed_forward(x_test[k:l])
             activations[k:l] = a_test[self.n_layers]
-        correctClassification = 0
+        correct_classification = 0
         for j in range(y_test.shape[0]):
-            if (np.argmax(activations[j]) == np.argmax(y_test[j])):
-                correctClassification += 1
-        accuracy = correctClassification / y_test.shape[0]
+            if np.argmax(activations[j]) == np.argmax(y_test[j]):
+                correct_classification += 1
+        accuracy = correct_classification / y_test.shape[0]
         return accuracy, activations
 
 
-def load_fashion_mnist_data(noTrainingSamples,noTestingSamples):
+def load_fashion_mnist_data(n_training_samples, n_testing_samples):
     np.random.seed(0)
 
-    data=np.load("../Tutorial-IJCAI-2019-Scalable-Deep-Learning/data/fashion_mnist.npz")
+    data = np.load("../Tutorial-IJCAI-2019-Scalable-Deep-Learning/data/fashion_mnist.npz")
 
-    indexTrain=np.arange(data["X_train"].shape[0])
-    np.random.shuffle(indexTrain)
+    index_train = np.arange(data["X_train"].shape[0])
+    np.random.shuffle(index_train)
 
-    indexTest=np.arange(data["X_test"].shape[0])
-    np.random.shuffle(indexTest)
+    index_test = np.arange(data["X_test"].shape[0])
+    np.random.shuffle(index_test)
 
-    X_train=data["X_train"][indexTrain[0:noTrainingSamples],:]
-    Y_train=data["Y_train"][indexTrain[0:noTrainingSamples],:]
-    X_test=data["X_test"][indexTest[0:noTestingSamples],:]
-    Y_test=data["Y_test"][indexTest[0:noTestingSamples],:]
+    x_train = data["X_train"][index_train[0:n_training_samples], :]
+    y_train = data["Y_train"][index_train[0:n_training_samples], :]
+    x_test = data["X_test"][index_test[0:n_testing_samples], :]
+    y_test = data["Y_test"][index_test[0:n_testing_samples], :]
 
-    #normalize in 0..1
-    X_train = X_train.astype('float64') / 255.
-    X_test = X_test.astype('float64') / 255.
+    # Normalize in 0..1
+    x_train = x_train.astype('float64') / 255.
+    x_test = x_test.astype('float64') / 255.
 
-    return X_train, Y_train, X_test, Y_test
+    return x_train, y_train, x_test, y_test
 
 
-def load_cifar10_data(noTrainingSamples,noTestingSamples):
+def load_cifar10_data(n_training_samples, n_testing_samples):
     np.random.seed(0)
 
     # read CIFAR10 data
@@ -636,24 +644,87 @@ def load_cifar10_data(noTrainingSamples,noTestingSamples):
     x_train = x_train.astype('float32')
     x_test = x_test.astype('float32')
 
-    indexTrain = np.arange(x_train.shape[0])
-    np.random.shuffle(indexTrain)
+    index_train = np.arange(x_train.shape[0])
+    np.random.shuffle(index_train)
 
-    indexTest = np.arange(x_test.shape[0])
-    np.random.shuffle(indexTest)
+    index_test = np.arange(x_test.shape[0])
+    np.random.shuffle(index_test)
 
-    x_train = x_train[indexTrain[0:noTrainingSamples], :]
-    y_train = y_train[indexTrain[0:noTrainingSamples], :]
-    x_test = x_test[indexTest[0:noTestingSamples], :]
-    y_test = y_test[indexTest[0:noTestingSamples], :]
+    x_train = x_train[index_train[0:n_training_samples], :]
+    y_train = y_train[index_train[0:n_training_samples], :]
+    x_test = x_test[index_test[0:n_testing_samples], :]
+    y_test = y_test[index_test[0:n_testing_samples], :]
 
     # normalize data
-    xTrainMean = np.mean(x_train, axis=0)
-    xTtrainStd = np.std(x_train, axis=0)
-    x_train = (x_train - xTrainMean) / xTtrainStd
-    x_test = (x_test - xTrainMean) / xTtrainStd
+    x_train_mean = np.mean(x_train, axis=0)
+    x_train_std = np.std(x_train, axis=0)
+    x_train = (x_train - x_train_mean) / x_train_std
+    x_test = (x_test - x_train_mean) / x_train_std
 
     x_train = x_train.reshape(-1, 32 * 32 * 3).astype('float64')
     x_test = x_test.reshape(-1, 32 * 32 * 3).astype('float64')
     return x_train, y_train, x_test, y_test
 
+
+def load_images(curr_dir, label):
+    print(f"Loading class {label} images ...")
+    class_dir = os.path.join(images_dirs, curr_dir)
+
+    x_train = []
+    y_train = []
+
+    # Iterate through the images in the given the folder
+    for image_path in os.listdir(class_dir):
+        # Create the full input path and read the file
+        input_path = os.path.join(class_dir, image_path)
+        image = Image.open(input_path)
+        x_train.append(np.asarray(image))
+        y_train.append(label)
+
+    x_train = np.asarray(x_train).reshape((-1, 32, 32, 3))
+    y_train = np.asarray(y_train).flatten()
+
+    print(f"Finished loading for class {label} images ...")
+    return x_train, y_train
+
+
+def load_augmented_cifar10_parallel(n_train_samples, n_test_samples):
+    class_dirs = os.listdir(images_dirs)
+
+    x_train = np.array([]).reshape((-1, 32, 32, 3))
+    y_train = np.array([])
+
+    # Loop through the data folders with training data
+    with ProcessPoolExecutor(max_workers=12) as executor:
+        results = executor.map(load_images, class_dirs, range(10))
+        for i, res in enumerate(results):
+            x_train = np.concatenate((x_train, res[0]), axis=0)
+            y_train = np.concatenate((y_train, res[1]))
+
+    (_, _), (x_test, y_test) = cifar10.load_data()
+    y_train = np_utils.to_categorical(y_train, 10)
+    y_test = np_utils.to_categorical(y_test, 10)
+    x_train = x_train.astype('float32')
+    x_test = x_test.astype('float32')
+
+    index_train = np.arange(x_train.shape[0])
+    np.random.shuffle(index_train)
+
+    index_test = np.arange(x_test.shape[0])
+    np.random.shuffle(index_test)
+
+    # Sample dataset
+    x_train = x_train[index_train[0:n_train_samples], :]
+    y_train = y_train[index_train[0:n_train_samples], :]
+    x_test = x_test[index_test[0:n_test_samples], :]
+    y_test = y_test[index_test[0:n_test_samples], :]
+
+    # Normalize data
+    x_train_mean = np.mean(x_train, axis=0)
+    x_train_std = np.std(x_train, axis=0)
+    x_train = (x_train - x_train_mean) / x_train_std
+    x_test = (x_test - x_train_mean) / x_train_std
+
+    x_train = x_train.reshape(-1, 32 * 32 * 3).astype('float64')
+    x_test = x_test.reshape(-1, 32 * 32 * 3).astype('float64')
+    return x_train, y_train, x_test, y_test

@@ -2,9 +2,8 @@
 
 import numpy as np
 import copy
-import pickle
-import os
 import logging
+
 
 class Optimizer(object):
     """Base class for optimization algorithms.
@@ -39,7 +38,7 @@ class VanillaSGD(Optimizer):
     """Stochastic gradient descent with no extra frills.
           learning_rate: learning rate parameter for SGD"""
 
-    def __init__(self, learning_rate=1):
+    def __init__(self, learning_rate=0.5):
         super(VanillaSGD, self).__init__()
         self.learning_rate = learning_rate
 
@@ -54,8 +53,8 @@ class VanillaSGD(Optimizer):
         for (id1, b), (id2, pdd) in zip(weights['b'].items(), gradient['b'].items()):
                 new_weights['b'][id1] = b - self.learning_rate*pdd
 
-        new_weights['pdw'] = gradient['pdw']
-        new_weights['pdd'] = gradient['pdd']
+        new_weights['pdw'] = gradient['w']
+        new_weights['pdd'] = gradient['b']
 
         return new_weights
 
@@ -376,7 +375,7 @@ class OptimizerBuilder(object):
             self.config = {}
         if self.name == 'sgd' and 'lr' not in self.config:
             logging.warning("Learning rate for SGD not set, using 1.0.")
-            self.config['lr'] = 1.
+            self.config['lr'] = 0.5
 
     def build(self):
         from keras.optimizers import deserialize

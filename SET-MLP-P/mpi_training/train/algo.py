@@ -1,9 +1,7 @@
 ### Algo class
-import os
+
 import numpy as np
-import logging
-from ast import literal_eval
-from .optimizer import get_optimizer, MultiOptimizer, OptimizerBuilder
+from .optimizer import get_optimizer, OptimizerBuilder
 
 
 class Algo(object):
@@ -15,7 +13,7 @@ class Algo(object):
           worker_update_type: whether to send weights or gradients to parent process
           send_before_apply: whether to send weights before applying update
           step_counter: counts time steps to determine when to sync
-            (used for Elastic Averaging SGD)
+          (used for Elastic Averaging SGD)
         See __init__ for list of other supported attributes
           """
 
@@ -80,11 +78,6 @@ class Algo(object):
 
         # Keep track if internal state was restored
         self.restore = False
-
-    def reset(self):
-        ## reset any caching running values
-        if self.optimizer:
-            self.optimizer.reset()
 
     def get_config(self):
         config = {}
@@ -154,5 +147,4 @@ class Algo(object):
         if self.mode == 'easgd':
             return self.get_elastic_update(weights, update)
         else:
-            new_weights = self.optimizer.apply_update(weights, update)
-            return new_weights
+            return self.optimizer.apply_update(weights, update)

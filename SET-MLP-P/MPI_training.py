@@ -44,10 +44,6 @@ if __name__ == '__main__':
     # Configuration of training process
     parser.add_argument('--optimizer', help='optimizer for master to use', default='sgd')
     parser.add_argument('--loss', help='loss function', default='mse')
-    parser.add_argument('--early-stopping', default=None,
-                        dest='early_stopping', help='patience for early stopping')
-    parser.add_argument('--target-metric', default=None,
-                        dest='target_metric', help='Passing configuration for a target metric')
     parser.add_argument('--worker-optimizer', help='optimizer for workers to use',
                         dest='worker_optimizer', default='sgd')
     parser.add_argument('--worker-optimizer-params',
@@ -91,7 +87,7 @@ if __name__ == '__main__':
     parser.add_argument('--log-interval', type=int, default=10,
                         help='how many batches to wait before logging training status')
     parser.add_argument('--n-training-samples', type=int, default=50000, help='Number of training samples')
-    parser.add_argument('--n-testing-samples', type=int, default=1000, help='Number of testing samples')
+    parser.add_argument('--n-testing-samples', type=int, default=10000, help='Number of testing samples')
 
     args = parser.parse_args()
 
@@ -159,9 +155,11 @@ if __name__ == '__main__':
                     worker_optimizer_params=args.worker_optimizer_params,
                     learning_rate=args.gem_lr, momentum=args.gem_momentum, kappa=args.gem_kappa)
     else:
-        algo = Algo(optimizer='sgd', loss='mse', validate_every=validate_every,
-                    sync_every=1, worker_optimizer='sgd',
-                    worker_optimizer_params={})
+        algo = Algo(optimizer='sgd', loss=args.loss, validate_every=validate_every,
+                    sync_every=args.sync_every,
+                    worker_optimizer=args.worker_optimizer,
+                    worker_optimizer_params=args.worker_optimizer_params,
+                    )
 
     # Model architecture
     dimensions = (3072, 4000, 1000, 4000, 10)
@@ -171,9 +169,7 @@ if __name__ == '__main__':
     manager = MPIManager(comm=comm, data=data, algo=algo, model=model,
                          num_epochs=args.epochs, num_masters=args.masters,
                          num_processes=args.processes, synchronous=args.synchronous,
-                         verbose=args.verbose, monitor=args.monitor,
-                         early_stopping=args.early_stopping,
-                         target_metric=args.target_metric)
+                         verbose=args.verbose, monitor=args.monitor)
 
     # Process 0 launches the training procedure
     if rank == 0:
@@ -186,7 +182,7 @@ if __name__ == '__main__':
         logging.info("Training finished in {0:.3f} seconds".format(delta_t))
 
         logging.info("Final performance of the model")
-        manager.process.validate()
+        manager.process.validate(manager.process.weights)
 
     comm.barrier()
     logging.info("Terminating")

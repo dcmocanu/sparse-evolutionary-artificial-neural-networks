@@ -32,10 +32,12 @@ class MPISingleWorker(MPIWorker):
                 epoch_metrics += train_metrics
 
                 ######
-                self.update = self.algo.compute_update(self.weights, self.model.get_weights())
-                self.weights = self.algo.apply_update(self.weights, self.update)
-                self.algo.set_worker_model_weights(self.model, self.weights)
+                # self.update = self.algo.compute_update(self.weights, self.model.get_weights())
+                # self.weights = self.algo.apply_update(self.weights, self.update)
+                # self.algo.set_worker_model_weights(self.model, self.weights)
                 ######
+
+                self.weights = self.model.get_weights()
 
             if self.monitor:
                 self.monitor.stop_monitor()

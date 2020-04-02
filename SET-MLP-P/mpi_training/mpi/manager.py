@@ -48,7 +48,7 @@ class MPIManager(object):
     """
 
     def __init__(self, comm, data, algo, model, num_epochs, num_masters=1, num_processes=1, synchronous=False,
-                 verbose=False, early_stopping=None, target_metric=None, monitor=False):
+                 verbose=False, monitor=False):
         """Create MPI communicator(s) needed for training, and create worker
             or master object as appropriate.
             Params:
@@ -87,8 +87,6 @@ class MPIManager(object):
         self.comm_instance = None
         self.is_master = None
         self.should_validate = None
-        self.early_stopping = early_stopping
-        self.target_metric = target_metric
         self.make_comms(comm)
 
     def make_comms(self, comm):
@@ -171,9 +169,7 @@ class MPIManager(object):
                                          data=self.data, algo=self.algo, model=self.model,
                                          child_comm=child_comm, num_epochs=self.num_epochs,
                                          num_sync_workers=num_sync_workers,
-                                         verbose=self.verbose,
-                                         early_stopping=self.early_stopping,
-                                         target_metric=self.target_metric
+                                         verbose=self.verbose
                                          )
             else:
 

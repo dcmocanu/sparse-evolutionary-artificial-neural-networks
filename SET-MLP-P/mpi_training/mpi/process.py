@@ -576,8 +576,7 @@ class MPIMaster(MPIProcess):
 
     def __init__(self, parent_comm, parent_rank=None, child_comm=None,
                  num_epochs=1, data=None, algo=None, model=None,
-                 num_sync_workers=1, verbose=False, monitor=False, early_stopping=None,
-                 target_metric=None):
+                 num_sync_workers=1, verbose=False, monitor=False):
         """Parameters:
               child_comm: MPI communicator used to contact children"""
         if child_comm is None:
@@ -587,12 +586,6 @@ class MPIMaster(MPIProcess):
         if parent_rank is not None:
             self.has_parent = True
         self.best_val_loss = None
-        self.target_metric = (target_metric if type(target_metric) == tuple else tuple(
-            map(lambda s: float(s) if s.replace('.', '').isdigit() else s,
-                target_metric.split(',')))) if target_metric else None
-        self.patience = (early_stopping if type(early_stopping) == tuple else tuple(
-            map(lambda s: float(s) if s.replace('.', '').isdigit() else s,
-                early_stopping.split(',')))) if early_stopping else None
 
         self.num_workers = child_comm.Get_size() - 1  # all processes but one are workers
         self.num_sync_workers = num_sync_workers
@@ -651,6 +644,7 @@ class MPIMaster(MPIProcess):
             self.waiting_workers_list.append(source)
 
             if self.decide_whether_to_sync():
+                # self.logger.info(f"Sync: {len(self.waiting_workers_list)}")
                 if self.algo.send_before_apply:
                     self.sync_parent()
                     self.sync_children()
@@ -658,8 +652,7 @@ class MPIMaster(MPIProcess):
                 else:
                     self.apply_update()
 
-                    # if (self.time_step % self.algo.validate_every == 0) or \
-                    #    (self._short_batches and self.time_step % self._short_batches == 0):
+                    # if self.time_step % self.algo.validate_every == 0:
                     #     self.model.weight_evolution()
                     #     self.weights = self.model.get_weights()
 
@@ -693,8 +686,6 @@ class MPIMaster(MPIProcess):
     def do_worker_finish_sequence(self, worker_id):
         """Actions to take when a worker finishes training and returns its history"""
         self.histories.update(self.recv_history_from_child(worker_id))
-        # key = "%d_%d" % (self.rank, worker_id)
-        # self.histories[key] = self.recv_history_from_child(worker_id)
         self.running_workers.remove(worker_id)
         self.num_sync_workers -= 1
 

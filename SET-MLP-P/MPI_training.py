@@ -72,8 +72,8 @@ if __name__ == '__main__':
 
     # Model configuration
     parser.add_argument('--batch-size', type=int, default=128, help='input batch size for training (default: 64)')
-    parser.add_argument('--epochs', type=int, default=5,  help='number of epochs to train (default: 10)')
-    parser.add_argument('--lr', type=float, default=0.05, help='learning rate (default: 0.01)')
+    parser.add_argument('--epochs', type=int, default=100,  help='number of epochs to train (default: 10)')
+    parser.add_argument('--lr', type=float, default=0.01, help='learning rate (default: 0.01)')
     parser.add_argument('--lr-rate-decay', type=float, default=0.0, help='learning rate decay (default: 0)')
     parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum (default: 0.5)')
     parser.add_argument('--dropout-rate', type=float, default=0.3, help='Dropout rate')
@@ -168,7 +168,7 @@ if __name__ == '__main__':
     # Creating the MPIManager object causes all needed worker and master nodes to be created
     manager = MPIManager(comm=comm, data=data, algo=algo, model=model,
                          num_epochs=args.epochs, num_masters=args.masters,
-                         num_processes=args.processes, synchronous=args.synchronous,
+                         num_processes=args.processes, synchronous=False,
                          verbose=args.verbose, monitor=args.monitor)
 
     # Process 0 launches the training procedure

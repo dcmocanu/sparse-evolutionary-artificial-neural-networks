@@ -430,7 +430,7 @@ class SET_MLP:
             t5 = datetime.datetime.now()
             if (i < self.epochs - 1):  # do not change connectivity pattern after the last epoch
 
-                # self.weightsEvolution_I() #this implementation is more didactic, but slow.
+                # self.weightsEvolution_I() # this implementation is more didactic, but slow.
                 self.weightsEvolution_II()  # this implementation has the same behaviour as the one above, but it is much faster.
             t6 = datetime.datetime.now()
             print("Weights evolution time ", t6 - t5)

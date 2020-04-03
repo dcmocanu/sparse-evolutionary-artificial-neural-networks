@@ -12,7 +12,7 @@ parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=3000, metavar='N',
                     help='input batch size for testing (default: 1000)')
-parser.add_argument('--epochs', type=int, default=20, metavar='N',
+parser.add_argument('--epochs', type=int, default=5, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--lr', type=float, default=0.05, metavar='LR',
                     help='learning rate (default: 0.01)')
@@ -80,6 +80,7 @@ if __name__ == "__main__":
             'n_hidden_neurons': n_hidden_neurons,
             'n_training_samples': n_training_samples,
             'n_testing_samples': n_testing_samples,
+            'loss': 'mse'
         }
 
         np.random.seed(i)

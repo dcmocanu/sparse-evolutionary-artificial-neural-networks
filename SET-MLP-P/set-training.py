@@ -37,6 +37,7 @@ parser.add_argument('--cuda', action='store_true', default=False,
 if __name__ == "__main__":
     args = parser.parse_args()
 
+    # SET sequential training
 
     for i in range(1):
 

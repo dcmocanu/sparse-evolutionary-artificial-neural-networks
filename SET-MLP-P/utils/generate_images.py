@@ -38,8 +38,8 @@ datagen = ImageDataGenerator(
 (x_train, y_train), (x_test, y_test) = cifar10.load_data()
 # y_train = np_utils.to_categorical(y_train, 10)
 # y_test = np_utils.to_categorical(y_test, 10)
-x_train = x_train.astype('float32')
-x_test = x_test.astype('float32')
+x_train = x_train.astype('float64')
+x_test = x_test.astype('float64')
 
 for index, image in enumerate(x_train):
     total = 0
@@ -47,8 +47,8 @@ for index, image in enumerate(x_train):
     # plt.show()
     # construct the actual Python generator
     print("[INFO] generating images..." + str(index))
-    imageGen = datagen.flow(image.reshape((1, 32, 32, 3)), batch_size=1, save_to_dir="cifar10/class_" + str(y_train[index][0]),
-                          save_prefix="aug_" + str(index), save_format="jpg")
+    imageGen = datagen.flow(image.reshape((1, 32, 32, 3)), batch_size=1, save_to_dir="../cifar10_augmented/class_" + str(y_train[index][0]),
+                          save_prefix="aug_" + str(index), save_format="png")
 
     # loop over examples from our image data augmentation generator
     for image in imageGen:
@@ -60,5 +60,4 @@ for index, image in enumerate(x_train):
         # from the loop
         if total == 20:
             break
-        # time.sleep(0.001)
-    time.sleep(0.01)
+

@@ -9,7 +9,7 @@ import logging
 from mpi4py import MPI
 
 from mpi_training.train.monitor import Monitor
-from mpi_training.utils import Error
+from utils.load_data import Error
 from mpi_training.logger import get_logger, set_logging_prefix
 
 
@@ -168,16 +168,12 @@ class MPIProcess(object):
         self.send_update(check_permission=True)
         self.time_step = self.recv_time_step()
         self.recv_weights()
-        self.algo.set_worker_model_weights(self.model, self.weights)
+        #self.algo.set_worker_model_weights(self.model, self.weights)
+        self.model.set_weights(self.weights)
 
     def apply_update(self):
         """Updates weights according to update received from worker process"""
-        with np.errstate(divide='raise',
-                         invalid='raise',
-                         over='raise',
-                         # under ='raise'## might not be too bad
-                         ):
-
+        with np.errstate(divide='raise',invalid='raise', over='raise'):
             self.weights = self.algo.apply_update(self.weights, self.update)
             self.model.set_weights(self.weights)
 
@@ -386,7 +382,7 @@ class MPIProcess(object):
                 obj = tmp
             return obj
         #if tag =='update': self.logger.info(f'tmp {tag}')
-        #if tag =='update': self.logger.info(f'tmp {obj}')
+        #if tag =='weights': self.logger.info(f'tmp {obj}')
         return self.recv(obj, tag, comm=comm, source=source, buffer=False)
 
     def recv_weights(self, comm=None, source=None, add_to_existing=False):

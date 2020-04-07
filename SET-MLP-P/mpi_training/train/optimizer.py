@@ -40,23 +40,20 @@ class VanillaSGD(Optimizer):
 
     def __init__(self, learning_rate=0.5):
         super(VanillaSGD, self).__init__()
-        self.learning_rate = learning_rate
+        self.learning_rate = 0.5
 
     def apply_update(self, weights, gradient):
         """Move weights in the direction of the gradient, by the amount of the
             learning rate."""
+        for k, dw in gradient['pdw'].items():
+            weights['pdw'][k] = self.learning_rate * dw
+            weights['w'][k] += weights['pdw'][k]
 
-        new_weights = {'w': {}, 'b': {}, 'pdw': {}, 'pdd': {}}
-        for (id1, w), (id2, pdw) in zip(weights['w'].items(), gradient['w'].items()):
-                new_weights['w'][id1] = w - self.learning_rate*pdw
+        for k, delta in gradient['pdd'].items():
+            weights['pdd'][k] = self.learning_rate * delta
+            weights['b'][k] += weights['pdd'][k]
 
-        for (id1, b), (id2, pdd) in zip(weights['b'].items(), gradient['b'].items()):
-                new_weights['b'][id1] = b - self.learning_rate*pdd
-
-        new_weights['pdw'] = gradient['w']
-        new_weights['pdd'] = gradient['b']
-
-        return new_weights
+        return weights
 
 
 class RunningAverageOptimizer(Optimizer):

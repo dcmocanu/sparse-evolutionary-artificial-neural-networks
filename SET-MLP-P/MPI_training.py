@@ -1,6 +1,7 @@
 import argparse
 import logging
 from models.set_mlp import *
+from utils.load_data import *
 
 from mpi4py import MPI
 from time import time
@@ -17,6 +18,39 @@ from mpi_training.logger import initialize_logger
 # port_mapping = [56131, 56135]
 # pydevd_pycharm.settrace('localhost', port=port_mapping[rank], stdoutToServer=True, stderrToServer=True)
 
+from keras.preprocessing.image import ImageDataGenerator
+
+# This will do preprocessing and realtime data augmentation:
+
+datagen = ImageDataGenerator(
+    featurewise_center=False,  # set input mean to 0 over the dataset
+    samplewise_center=False,  # set each sample mean to 0
+    featurewise_std_normalization=False,  # divide inputs by std of the dataset
+    samplewise_std_normalization=False,  # divide each input by its std
+    zca_whitening=False,  # apply ZCA whitening
+    zca_epsilon=1e-06,  # epsilon for ZCA whitening
+    rotation_range=0,  # randomly rotate images in the range (degrees, 0 to 180)
+    # randomly shift images horizontally (fraction of total width)
+    width_shift_range=0.1,
+    # randomly shift images vertically (fraction of total height)
+    height_shift_range=0.1,
+    shear_range=0.,  # set range for random shear
+    zoom_range=0.,  # set range for random zoom
+    channel_shift_range=0.,  # set range for random channel shifts
+    # set mode for filling points outside the input boundaries
+    fill_mode='nearest',
+    cval=0.,  # value used for fill_mode = "constant"
+    horizontal_flip=True,  # randomly flip images
+    vertical_flip=False,  # randomly flip images
+    # set rescaling factor (applied before any other transformation)
+    rescale=None,
+    # set function that will be applied on each input
+    preprocessing_function=None,
+    # image data format, either "channels_first" or "channels_last"
+    data_format=None,
+    # fraction of images reserved for validation (strictly between 0 and 1)
+    validation_split=0.0
+)
 
 def shared_partitions(n, num_workers, batch_size):
     dinds = list(range(n))
@@ -39,7 +73,7 @@ if __name__ == '__main__':
     # Configuration of network topology
     parser.add_argument('--masters', help='number of master processes', default=1, type=int)
     parser.add_argument('--processes', help='number of processes per worker', default=1, type=int)
-    parser.add_argument('--synchronous', help='run in synchronous mode', action='store_true')
+    parser.add_argument('--synchronous', help='run in synchronous mode', default=False)
 
     # Configuration of training process
     parser.add_argument('--optimizer', help='optimizer for master to use', default='sgd')
@@ -72,8 +106,8 @@ if __name__ == '__main__':
 
     # Model configuration
     parser.add_argument('--batch-size', type=int, default=128, help='input batch size for training (default: 64)')
-    parser.add_argument('--epochs', type=int, default=100,  help='number of epochs to train (default: 10)')
-    parser.add_argument('--lr', type=float, default=0.01, help='learning rate (default: 0.01)')
+    parser.add_argument('--epochs', type=int, default=20,  help='number of epochs to train (default: 10)')
+    parser.add_argument('--lr', type=float, default=0.05, help='learning rate (default: 0.01)')
     parser.add_argument('--lr-rate-decay', type=float, default=0.0, help='learning rate decay (default: 0)')
     parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum (default: 0.5)')
     parser.add_argument('--dropout-rate', type=float, default=0.3, help='Dropout rate')
@@ -113,31 +147,49 @@ if __name__ == '__main__':
         'loss': args.loss
     }
 
-    # Load dataset
-    X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
-
     comm = MPI.COMM_WORLD.Dup()
 
     model_weights = None
     rank = comm.Get_rank()
 
     if comm.Get_size() == 1:
+        # Load dataset
+        X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
         data = Data(batch_size=args.batch_size, x_train=X_train,
                     y_train=Y_train,
                     x_test=X_test, y_test=Y_test)
     else:
         if rank != 0:
-            partition = shared_partitions(args.n_training_samples, comm.Get_size() - 1, args.batch_size)
-            data = Data(batch_size=args.batch_size, x_train=X_train[partition[rank-1]],
-                        y_train=Y_train[partition[rank-1]],
+            # Load augmented dataset
+            # partitions = shared_partitions(args.n_training_samples, comm.Get_size() - 1, args.batch_size)
+            # X_test = np.load('mpi_training/cifar10/x_test.npy', mmap_mode='r')
+            # Y_test = np.load('mpi_training/cifar10/y_test.npy', mmap_mode='r')
+            # X_train = np.load('mpi_training/cifar10/x_train.npy', mmap_mode='r')
+            # Y_train = np.load('mpi_training/cifar10/y_train.npy', mmap_mode='r')
+            # data = Data(batch_size=args.batch_size, x_train=X_train[partitions[rank - 1]],
+            #             y_train=Y_train[partitions[rank - 1]],
+            #             x_test=X_test, y_test=Y_test)
+
+            # Load normal dataset
+            partitions = shared_partitions(args.n_training_samples, comm.Get_size() - 1, args.batch_size)
+            X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
+            data = Data(batch_size=args.batch_size, x_train=X_train[partitions[rank - 1]],
+                        y_train=Y_train[partitions[rank - 1]],
                         x_test=X_test, y_test=Y_test)
+
+            del X_train, Y_train, X_test, Y_test
         else:
+            # X_test = np.load('mpi_training/cifar10/x_test.npy', mmap_mode='r')
+            # Y_test = np.load('mpi_training/cifar10/y_test.npy', mmap_mode='r')
+
+            _, _, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
             data = Data(batch_size=args.batch_size, x_train=None,
                         y_train=None,
                         x_test=X_test, y_test=Y_test)
+            del X_test, Y_test
 
-    validate_every = int(X_train.shape[0] / args.batch_size * 2)
-    del X_train, Y_train, X_test, Y_test
+    validate_every = 10# int(args.n_training_samples // args.batch_size * comm.Get_size() - 1)
+
 
     # Some input arguments may be ignored depending on chosen algorithm
     if args.mode == 'easgd':
@@ -161,8 +213,16 @@ if __name__ == '__main__':
                     worker_optimizer_params=args.worker_optimizer_params,
                     )
 
-    # Model architecture
+    # Model architecture cifar10
     dimensions = (3072, 4000, 1000, 4000, 10)
+
+    # Model architecture mnist
+    # dimensions = (784, 1000, 1000, 1000, 10)
+
+    # Model architecture higgs
+    # dimensions = (28, 1000, 1000, 1000, 2)
+
+
     model = MPIModel(model=SET_MLP(dimensions, (Relu, Relu, Relu, Sigmoid), **model_config))
 
     # Creating the MPIManager object causes all needed worker and master nodes to be created

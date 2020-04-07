@@ -50,7 +50,7 @@ class MPISingleWorker(MPIWorker):
             if self.stop_training:
                 break
 
-            self.validate()
+            self.validate(self.weights)
 
             if epoch < self.num_epochs:  # do not change connectivity pattern after the last epoch
                 self.model.weight_evolution()
@@ -62,5 +62,5 @@ class MPISingleWorker(MPIWorker):
         if self.monitor:
             self.update_monitor(self.monitor.get_stats())
 
-    def validate(self):
-        return MPIMaster.validate_aux(self, self.weights, self.model)
+    def validate(self, weights):
+        return MPIMaster.validate_aux(self, weights, self.model)

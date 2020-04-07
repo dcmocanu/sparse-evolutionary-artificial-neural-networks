@@ -99,10 +99,7 @@ class Algo(object):
         elif self.worker_update_type == 'weights':
             return new_weights
         else:
-            update = {'w': {}, 'b': {}, 'pdw': {}, 'pdd': {}}
-            for (k_new, new), (k_old, old) in zip(cur_weights.items(), new_weights.items()):
-                for (i1, n), (i2, o) in zip(old.items(), new.items()):
-                    update[k_new][i1] = o - n
+            update = {'pdw': {}, 'pdd': {}}
             update['pdw'] = new_weights['pdw']
             update['pdd'] = new_weights['pdd']
             return update

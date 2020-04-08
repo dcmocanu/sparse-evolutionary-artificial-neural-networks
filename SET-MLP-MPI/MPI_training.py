@@ -22,35 +22,6 @@ from keras.preprocessing.image import ImageDataGenerator
 
 # This will do preprocessing and realtime data augmentation:
 
-datagen = ImageDataGenerator(
-    featurewise_center=False,  # set input mean to 0 over the dataset
-    samplewise_center=False,  # set each sample mean to 0
-    featurewise_std_normalization=False,  # divide inputs by std of the dataset
-    samplewise_std_normalization=False,  # divide each input by its std
-    zca_whitening=False,  # apply ZCA whitening
-    zca_epsilon=1e-06,  # epsilon for ZCA whitening
-    rotation_range=0,  # randomly rotate images in the range (degrees, 0 to 180)
-    # randomly shift images horizontally (fraction of total width)
-    width_shift_range=0.1,
-    # randomly shift images vertically (fraction of total height)
-    height_shift_range=0.1,
-    shear_range=0.,  # set range for random shear
-    zoom_range=0.,  # set range for random zoom
-    channel_shift_range=0.,  # set range for random channel shifts
-    # set mode for filling points outside the input boundaries
-    fill_mode='nearest',
-    cval=0.,  # value used for fill_mode = "constant"
-    horizontal_flip=True,  # randomly flip images
-    vertical_flip=False,  # randomly flip images
-    # set rescaling factor (applied before any other transformation)
-    rescale=None,
-    # set function that will be applied on each input
-    preprocessing_function=None,
-    # image data format, either "channels_first" or "channels_last"
-    data_format=None,
-    # fraction of images reserved for validation (strictly between 0 and 1)
-    validation_split=0.0
-)
 
 def shared_partitions(n, num_workers, batch_size):
     dinds = list(range(n))
@@ -73,7 +44,7 @@ if __name__ == '__main__':
     # Configuration of network topology
     parser.add_argument('--masters', help='number of master processes', default=1, type=int)
     parser.add_argument('--processes', help='number of processes per worker', default=1, type=int)
-    parser.add_argument('--synchronous', help='run in synchronous mode', default=False)
+    parser.add_argument('--synchronous', help='run in synchronous mode', action='store_true')
 
     # Configuration of training process
     parser.add_argument('--optimizer', help='optimizer for master to use', default='sgd')
@@ -162,10 +133,8 @@ if __name__ == '__main__':
         if rank != 0:
             # Load augmented dataset
             # partitions = shared_partitions(args.n_training_samples, comm.Get_size() - 1, args.batch_size)
-            # X_test = np.load('mpi_training/cifar10/x_test.npy', mmap_mode='r')
-            # Y_test = np.load('mpi_training/cifar10/y_test.npy', mmap_mode='r')
-            # X_train = np.load('mpi_training/cifar10/x_train.npy', mmap_mode='r')
-            # Y_train = np.load('mpi_training/cifar10/y_train.npy', mmap_mode='r')
+            #
+            # X_train, Y_train, X_test, Y_test = load_cifar10_500K_data()
             # data = Data(batch_size=args.batch_size, x_train=X_train[partitions[rank - 1]],
             #             y_train=Y_train[partitions[rank - 1]],
             #             x_test=X_test, y_test=Y_test)
@@ -188,7 +157,7 @@ if __name__ == '__main__':
                         x_test=X_test, y_test=Y_test)
             del X_test, Y_test
 
-    validate_every = 10# int(args.n_training_samples // args.batch_size * comm.Get_size() - 1)
+    validate_every = 50 # int(args.n_training_samples // args.batch_size * comm.Get_size() - 1)
 
 
     # Some input arguments may be ignored depending on chosen algorithm
@@ -228,7 +197,7 @@ if __name__ == '__main__':
     # Creating the MPIManager object causes all needed worker and master nodes to be created
     manager = MPIManager(comm=comm, data=data, algo=algo, model=model,
                          num_epochs=args.epochs, num_masters=args.masters,
-                         num_processes=args.processes, synchronous=False,
+                         num_processes=args.processes, synchronous=args.synchronous,
                          verbose=args.verbose, monitor=args.monitor)
 
     # Process 0 launches the training procedure

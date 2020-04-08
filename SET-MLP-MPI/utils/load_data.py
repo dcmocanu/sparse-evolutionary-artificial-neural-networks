@@ -42,42 +42,20 @@ def load_fashion_mnist_data(n_training_samples, n_testing_samples):
     return x_train, y_train, x_test, y_test
 
 
-def load_cifar10_1M_data(n_training_samples, n_testing_samples):
+def load_cifar10_1M_data():
     np.random.seed(0)
 
-    data = np.load("../data/CIFAR10/cifar_1M.npz")
+    data = np.load("../data/CIFAR10/cifar10_augmented_1M.npz", mmap_mode='r')
 
-    index_train = np.arange(data["X_train"].shape[0])
-    np.random.shuffle(index_train)
-
-    index_test = np.arange(data["X_test"].shape[0])
-    np.random.shuffle(index_test)
-
-    x_train = data["X_train"][index_train[0:n_training_samples], :]
-    y_train = data["Y_train"][index_train[0:n_training_samples], :]
-    x_test = data["X_test"][index_test[0:n_testing_samples], :]
-    y_test = data["Y_test"][index_test[0:n_testing_samples], :]
-
-    return x_train, y_train, x_test, y_test
+    return data['X_train'], data['Y_train'], data['X_test'], data['Y_test']
 
 
-def load_cifar10_500K_data(n_training_samples, n_testing_samples):
+def load_cifar10_500K_data():
     np.random.seed(0)
 
-    data = np.load("../data/CIFAR10/cifar_500K.npz")
+    data = np.load("../data/CIFAR10/cifar10_augmented_500K.npz", mmap_mode='r')
 
-    index_train = np.arange(data["X_train"].shape[0])
-    np.random.shuffle(index_train)
-
-    index_test = np.arange(data["X_test"].shape[0])
-    np.random.shuffle(index_test)
-
-    x_train = data["X_train"][index_train[0:n_training_samples], :]
-    y_train = data["Y_train"][index_train[0:n_training_samples], :]
-    x_test = data["X_test"][index_test[0:n_testing_samples], :]
-    y_test = data["Y_test"][index_test[0:n_testing_samples], :]
-
-    return x_train, y_train, x_test, y_test
+    return data['X_train'], data['Y_train'], data['X_test'], data['Y_test']
 
 
 def load_cifar10_data(n_training_samples, n_testing_samples):
@@ -133,7 +111,7 @@ def load_images(curr_dir, label):
     return x_train, y_train
 
 
-def load_augmented_cifar10_parallel(n_test_samples):
+def load_augmented_cifar10_parallel():
     class_dirs = os.listdir(images_dirs)
 
     x_train = np.array([], dtype='float32').reshape((-1, 32, 32, 3))
@@ -148,9 +126,24 @@ def load_augmented_cifar10_parallel(n_test_samples):
 
 
     (_, _), (x_test, y_test) = cifar10.load_data()
+
     y_train = np_utils.to_categorical(y_train, 10)
     y_test = np_utils.to_categorical(y_test, 10)
+    x_train = x_train.astype('float32')
+    x_test = x_test.astype('float32')
 
+    index_train = np.arange(x_train.shape[0])
+    np.random.shuffle(index_train)
+
+    index_test = np.arange(x_test.shape[0])
+    np.random.shuffle(index_test)
+
+    x_train = x_train[index_train[0:1000000], :]
+    y_train = y_train[index_train[0:1000000], :]
+    x_test = x_test[index_test[0:10000], :]
+    y_test = y_test[index_test[0:10000], :]
+
+    # Normalize in 0..1
     x_train = x_train.astype('float64') / 255.
     x_test = x_test.astype('float64') / 255.
 
@@ -161,7 +154,7 @@ def load_augmented_cifar10_parallel(n_test_samples):
 
 
 if __name__ == '__main__':
-    x_train, y_train, x_test, y_test = load_augmented_cifar10_parallel(10000)
+    x_train, y_train, x_test, y_test = load_augmented_cifar10_parallel()
     print(x_train.shape)
     print(y_train.shape)
     print(x_test.shape)

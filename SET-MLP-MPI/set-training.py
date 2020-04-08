@@ -2,6 +2,7 @@ from models.set_mlp import *
 import time
 import argparse
 import os
+from utils.load_data import *
 
 # **** change the warning level ****
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -12,7 +13,7 @@ parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=3000, metavar='N',
                     help='input batch size for testing (default: 1000)')
-parser.add_argument('--epochs', type=int, default=5, metavar='N',
+parser.add_argument('--epochs', type=int, default=25, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--lr', type=float, default=0.05, metavar='LR',
                     help='learning rate (default: 0.01)')
@@ -87,7 +88,7 @@ if __name__ == "__main__":
 
         # Load augmented dataset
         start_time = time.time()
-        X_train, Y_train, X_test, Y_test = load_cifar10_data(n_training_samples, n_testing_samples)
+        X_train, Y_train, X_test, Y_test = load_cifar10_500K_data()
         step_time = time.time() - start_time
         print("Loading augmented dataset time: ", step_time)
 

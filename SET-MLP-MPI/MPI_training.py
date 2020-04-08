@@ -11,6 +11,9 @@ from mpi_training.train.data import Data
 from mpi_training.train.model import MPIModel
 from mpi_training.logger import initialize_logger
 
+# Run this file with "mpiexec -n 4 python MPI_training.py"
+# Add --synchronous if you want to train in syncronous mode
+
 # Debugging with size > 1
 # size = MPI.COMM_WORLD.Get_size()
 # rank = MPI.COMM_WORLD.Get_rank()
@@ -76,8 +79,8 @@ if __name__ == '__main__':
     parser.add_argument('--log-level', default='info', dest='log_level', help='log level (debug, info, warn, error)')
 
     # Model configuration
-    parser.add_argument('--batch-size', type=int, default=128, help='input batch size for training (default: 64)')
-    parser.add_argument('--epochs', type=int, default=20,  help='number of epochs to train (default: 10)')
+    parser.add_argument('--batch-size', type=int, default=64, help='input batch size for training (default: 64)')
+    parser.add_argument('--epochs', type=int, default=25,  help='number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=0.05, help='learning rate (default: 0.01)')
     parser.add_argument('--lr-rate-decay', type=float, default=0.0, help='learning rate decay (default: 0)')
     parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum (default: 0.5)')
@@ -97,7 +100,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Initialize logger
-    initialize_logger(filename=args.log_file, file_level=args.log_level, stream_level=args.log_level)
+    initialize_logger(filename="mpi_logger.txt", file_level=args.log_level, stream_level=args.log_level)
 
     # SET parameters
     model_config = {
@@ -157,7 +160,7 @@ if __name__ == '__main__':
                         x_test=X_test, y_test=Y_test)
             del X_test, Y_test
 
-    validate_every = 50 # int(args.n_training_samples // args.batch_size * comm.Get_size() - 1)
+    validate_every = int(args.n_training_samples // args.batch_size)
 
 
     # Some input arguments may be ignored depending on chosen algorithm

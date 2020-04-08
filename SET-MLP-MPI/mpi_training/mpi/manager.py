@@ -165,6 +165,7 @@ class MPIManager(object):
             if self.is_master:
 
                 num_sync_workers = self.get_num_sync_workers(child_comm)
+
                 self.process = MPIMaster(parent_comm, parent_rank=self.parent_rank,
                                          data=self.data, algo=self.algo, model=self.model,
                                          child_comm=child_comm, num_epochs=self.num_epochs,

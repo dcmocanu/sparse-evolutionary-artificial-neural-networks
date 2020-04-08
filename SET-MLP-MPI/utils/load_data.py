@@ -80,12 +80,15 @@ def load_cifar10_data(n_training_samples, n_testing_samples):
     x_test = x_test[index_test[0:n_testing_samples], :]
     y_test = y_test[index_test[0:n_testing_samples], :]
 
-    # Normalize in 0..1
-    x_train = x_train.astype('float64') / 255.
-    x_test = x_test.astype('float64') / 255.
+    # Normalize data
+    x_train_mean = np.mean(x_train, axis=0)
+    x_train_std = np.std(x_train, axis=0)
+    x_train = (x_train - x_train_mean) / x_train_std
+    x_test = (x_test - x_train_mean) / x_train_std
 
-    x_train = x_train.reshape(-1, 32 * 32 * 3)
-    x_test = x_test.reshape(-1, 32 * 32 * 3)
+    x_train = x_train.reshape(-1, 32 * 32 * 3).astype('float64')
+    x_test = x_test.reshape(-1, 32 * 32 * 3).astype('float64')
+
     return x_train, y_train, x_test, y_test
 
 
@@ -143,12 +146,14 @@ def load_augmented_cifar10_parallel():
     x_test = x_test[index_test[0:10000], :]
     y_test = y_test[index_test[0:10000], :]
 
-    # Normalize in 0..1
-    x_train = x_train.astype('float64') / 255.
-    x_test = x_test.astype('float64') / 255.
+    # Normalize data
+    x_train_mean = np.mean(x_train, axis=0)
+    x_train_std = np.std(x_train, axis=0)
+    x_train = (x_train - x_train_mean) / x_train_std
+    x_test = (x_test - x_train_mean) / x_train_std
 
-    x_train = x_train.reshape(-1, 32 * 32 * 3)
-    x_test = x_test.reshape(-1, 32 * 32 * 3)
+    x_train = x_train.reshape(-1, 32 * 32 * 3).astype('float64')
+    x_test = x_test.reshape(-1, 32 * 32 * 3).astype('float64')
 
     return x_train, y_train, x_test, y_test
 

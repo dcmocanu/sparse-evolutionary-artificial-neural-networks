@@ -528,7 +528,7 @@ class MPIWorker(MPIProcess):
                 break
 
         self.logger.debug("Signing off")
-        stats = None
+
         if self.monitor:
 
             stats = self.monitor.get_stats()
@@ -640,7 +640,6 @@ class MPIMaster(MPIProcess):
             self.waiting_workers_list.append(source)
 
             if self.decide_whether_to_sync():
-                # self.logger.info(f"Sync: {len(self.waiting_workers_list)}")
                 if self.algo.send_before_apply:
                     self.sync_parent()
                     self.sync_children()
@@ -716,7 +715,7 @@ class MPIMaster(MPIProcess):
             self.send_exit_to_child(worker_id)
 
     def train(self, testing=False):
-        """Broadcasts model information to children and signals them to start training.
+        """ Broadcasts model information to children and signals them to start training.
             Receive messages from workers and processes each message until training is done.
             When finished, signal the parent process that training is complete.
         """

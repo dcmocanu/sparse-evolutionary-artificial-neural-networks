@@ -91,8 +91,8 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=1, help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=10,
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--n-training-samples', type=int, default=50000, help='Number of training samples')
-    parser.add_argument('--n-testing-samples', type=int, default=10000, help='Number of testing samples')
+    parser.add_argument('--n-training-samples', type=int, default=5000, help='Number of training samples')
+    parser.add_argument('--n-testing-samples', type=int, default=1000, help='Number of testing samples')
 
     args = parser.parse_args()
 

@@ -25,16 +25,16 @@ class MPISingleWorker(MPIWorker):
             i_batch = 0
 
             for i_batch, batch in enumerate(self.data.generate_data()):
-                train_metrics = self.model.train_on_batch(x=batch[0], y=batch[1])
+                loss, accuracy, self.update = self.model.train_on_batch(x=batch[0], y=batch[1])
 
+                train_metrics = np.asarray((loss, accuracy))
                 if epoch_metrics.shape != train_metrics.shape:
                     epoch_metrics = np.zeros(train_metrics.shape)
                 epoch_metrics += train_metrics
 
                 ######
-                # self.update = self.algo.compute_update(self.weights, self.model.get_weights())
-                # self.weights = self.algo.apply_update(self.weights, self.update)
-                # self.algo.set_worker_model_weights(self.model, self.weights)
+                self.weights = self.algo.apply_update(self.weights, self.update)
+                self.algo.set_worker_model_weights(self.model, self.weights)
                 ######
 
                 self.weights = self.model.get_weights()

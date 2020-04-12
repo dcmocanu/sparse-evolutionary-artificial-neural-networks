@@ -2,7 +2,6 @@
 
 import os, json
 import numpy as np
-import copy
 import time
 import logging
 import datetime

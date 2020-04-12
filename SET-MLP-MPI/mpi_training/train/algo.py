@@ -21,12 +21,13 @@ class Algo(object):
     supported_opts = {'loss': 'mse',
                       'validate_every': 1000,
                       'sync_every': 1,
-                      'mode': 'sgd',
+                      'mode': 'sgdm',
                       'worker_optimizer': 'sgd',
                       'worker_optimizer_params': '{}',
                       'elastic_force': None,
                       'elastic_lr': 1.0,
                       'elastic_momentum': 0,
+                      'lr': 0.5
                       }
 
     def __init__(self, optimizer, **kwargs):

@@ -5,9 +5,9 @@ import numpy as np
 import copy
 import time
 import logging
+import datetime
 
 from mpi4py import MPI
-
 from mpi_training.train.monitor import Monitor
 from utils.load_data import Error
 from mpi_training.logger import get_logger, set_logging_prefix
@@ -167,7 +167,7 @@ class MPIProcess(object):
 
         self.send_update(check_permission=True)
         self.time_step = self.recv_time_step()
-        self.recv_weights()
+        self.weights = self.recv_weights()
         #self.algo.set_worker_model_weights(self.model, self.weights)
         self.model.set_weights(self.weights)
 
@@ -292,8 +292,6 @@ class MPIProcess(object):
                     else:
                         comm.Send(o, dest=dest, tag=tag_num)
             else:
-                #self.logger.info(f'Send updae {self.update}')
-                #self.logger.info(f'Send updae {obj}')
                 comm.send(obj, dest=dest, tag=tag_num)
 
     def bcast(self, obj, root=0, buffer=False, comm=None):
@@ -306,7 +304,6 @@ class MPIProcess(object):
               comm: MPI communicator to use.  Defaults to self.parent_comm"""
         if comm is None:
             comm = self.parent_comm
-        self.logger.info('Broadcasting weights')
         obj = comm.bcast(obj, root=root)
         return obj
 
@@ -349,7 +346,6 @@ class MPIProcess(object):
         if self.is_shadow(): return
         """Send update to the process specified by comm (MPI communicator) and dest (rank).
             Before sending the update we first send the tag 'begin_update'"""
-        #self.logger.info(f'{self.update}')
         self.send_arrays(self.update, expect_tag='begin_update', tag='update',
                          comm=comm, dest=dest, check_permission=check_permission)
 
@@ -388,7 +384,7 @@ class MPIProcess(object):
     def recv_weights(self, comm=None, source=None, add_to_existing=False):
         """Receive NN weights layer by layer from the process specified by comm and source"""
         if self.is_shadow(): return
-        self.recv_arrays(self.weights, tag='weights', comm=comm, source=source,
+        return self.recv_arrays(self.weights, tag='weights', comm=comm, source=source,
                          add_to_existing=add_to_existing)
 
     def recv_update(self, comm=None, source=None, add_to_existing=False):
@@ -443,7 +439,6 @@ class MPIWorker(MPIProcess):
         super(MPIWorker, self).build_model()
 
     def sync_with_parent(self):
-        self.compute_update()
         if self.algo.mode == 'gem':
             self.do_gem_sequence()
         else:
@@ -484,21 +479,16 @@ class MPIWorker(MPIProcess):
             epoch_metrics = np.zeros((1,))
             i_batch = 0
 
-            # if epoch > 1 and (epoch < self.num_epochs):
-            #     self.model.weight_evolution()
-            #     self.weights = self.model.get_weights()
-
             for i_batch, batch in enumerate(self.data.generate_data()):
 
                 if self.process_comm:
-                    self.logger.info("broadcast the weights to all processes")
                     ## broadcast the weights to all processes
                     self.bcast_weights(comm=self.process_comm)
                     if self.process_comm.Get_rank() != 0:
                         self.model.set_weights(self.weights)
 
-                self.old = copy.deepcopy(self.weights)
-                train_metrics = self.model.train_on_batch(x=batch[0], y=batch[1])
+                loss, accuracy, self.update = self.model.train_on_batch(x=batch[0], y=batch[1])
+                train_metrics = np.asarray((loss, accuracy))
 
                 if epoch_metrics.shape != train_metrics.shape:
                     epoch_metrics = np.zeros(train_metrics.shape)
@@ -523,6 +513,7 @@ class MPIWorker(MPIProcess):
             if testing:
                 self.logger.info("Epoch metrics:")
                 self.print_metrics(epoch_metrics)
+                self.validate(self.weights, self.model)
 
             if self.stop_training:
                 break
@@ -537,9 +528,22 @@ class MPIWorker(MPIProcess):
         self.send_exit_to_parent()
         self.send_history_to_parent()
 
-    def compute_update(self):
-        """Compute the update from the new and old sets of model weights"""
-        self.update = self.algo.compute_update(self.old, self.model.get_weights())
+    def validate(self, weights, model):
+        self.logger.debug("Starting validation")
+        val_metrics = np.zeros((1,))
+        i_batch = 0
+        for i_batch, batch in enumerate(self.data.generate_test_data()):
+            new_val_metrics = model.test_on_batch(x=batch[0], y=batch[1])
+
+            if val_metrics.shape != new_val_metrics.shape:
+                val_metrics = np.zeros(new_val_metrics.shape)
+            val_metrics += new_val_metrics
+
+        val_metrics = val_metrics / float(i_batch + 1)
+
+        self.logger.info("Validation metrics:")
+        self.print_metrics(val_metrics)
+        self.logger.debug("Ending validation")
 
     def await_signal_from_parent(self):
         """Wait for 'train' signal from parent process"""
@@ -647,16 +651,22 @@ class MPIMaster(MPIProcess):
                 else:
                     self.apply_update()
 
-                    # if self.time_step % self.algo.validate_every == 0:
-                    #     self.model.weight_evolution()
-                    #     self.weights = self.model.get_weights()
+                    if self.algo.validate_every > 0 and self.time_step > 0:
+                        if self.time_step % self.algo.validate_every == 0:
+                            if self.epoch < self.num_epochs//self.num_workers:
+                                self.validate(self.weights)
+                                t5 = datetime.datetime.now()
+                                self.model.weight_evolution()
+                                t6 = datetime.datetime.now()
+                                self.logger.info(f"Weights evolution time  {t6 - t5}")
+                                self.weights = self.model.get_weights()
+                            self.logger.info(f"Master epoch {self.epoch}")
 
                     self.sync_parent()
                     self.sync_children()
 
             if self.algo.validate_every > 0 and self.time_step > 0:
                 if self.time_step % self.algo.validate_every == 0:
-                    self.validate(self.weights)
                     self.epoch += 1
         else:
             self.sync_child(source)

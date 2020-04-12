@@ -33,6 +33,7 @@
 # Ritchie Vink (https://www.ritchievink.com): for making available on Github a nice Python implementation of fully connected MLPs. This SET-MLP implementation was built on top of his MLP code:
 #                                             https://github.com/ritchie46/vanilla-machine-learning/blob/master/vanilla_mlp.py
 import numpy as np
+from keras.losses import *
 from scipy.sparse import lil_matrix
 from scipy.sparse import coo_matrix
 from scipy.sparse import dok_matrix
@@ -99,11 +100,17 @@ class Relu:
 class Sigmoid:
     @staticmethod
     def activation(z):
-        return 1 / (1 + np.exp(-z))
+        # return np.where(z > 0, 1. / (1. + np.exp(-z)), np.exp(z) / (np.exp(z) + np.exp(0)))
+        # return .5 * (1 + np.tanh(.5 * z))
+        # restrict domain of sigmoid function within [1e-15, 1 - 1e-15]
+        sigmoid_range = 34.538776394910684
+        x = np.clip(z, -sigmoid_range, sigmoid_range)
+
+        return 1.0 / (1.0 + np.exp(-x))
 
     @staticmethod
     def prime(z):
-        return Sigmoid.activation(z) * (1 - Sigmoid.activation(z))
+        return Sigmoid.activation(z) * (1. - Sigmoid.activation(z))
 
 
 class MSE:
@@ -324,34 +331,14 @@ class SET_MLP:
             # backpropagation_updates_Numpy(a[i - 1], delta, dw.row, dw.col, dw.data)
 
             update_params[i - 1] = (dw.tocsr(), delta)
-        for k, v in update_params.items():
-            self._update_w_b(k, v[0], v[1])
 
-    def _update_w_b(self, index, dw, delta):
-        """
-        Update weights and biases.
-
-        :param index: (int) Number of the layer
-        :param dw: (array) Partial derivatives
-        :param delta: (array) Delta error.
-        """
-
-        # perform the update with momentum
-        if (index not in self.pdw):
-            self.pdw[index] = - dw
-            self.pdd[index] = - np.mean(delta, 0)
-        else:
-            self.pdw[index] = - dw
-            self.pdd[index] = - np.mean(delta, 0)
-
-        self.w[index] += self.pdw[index]
-        self.b[index] += self.pdd[index]
+        return update_params
 
     def train_on_batch(self, x, y):
         z, a = self._feed_forward(x, True)
-        self._back_prop(z, a, y)
+        update = self._back_prop(z, a, y)
         accuracy, activations = self.predict(x, y)
-        return self.loss.loss(y, activations), accuracy
+        return self.loss.loss(y, activations), accuracy, update
 
     def test_on_batch(self, x, y):
         accuracy, activations = self.predict(x, y)

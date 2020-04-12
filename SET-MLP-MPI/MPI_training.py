@@ -1,6 +1,6 @@
 import argparse
 import logging
-from models.set_mlp import *
+from models.set_mlp_mpi import *
 from utils.load_data import *
 
 from mpi4py import MPI
@@ -20,10 +20,6 @@ from mpi_training.logger import initialize_logger
 # import pydevd_pycharm
 # port_mapping = [56131, 56135]
 # pydevd_pycharm.settrace('localhost', port=port_mapping[rank], stdoutToServer=True, stderrToServer=True)
-
-from keras.preprocessing.image import ImageDataGenerator
-
-# This will do preprocessing and realtime data augmentation:
 
 
 def shared_partitions(n, num_workers, batch_size):
@@ -60,7 +56,8 @@ if __name__ == '__main__':
     parser.add_argument('--sync-every', help='how often to sync weights with master',
                         default=1, type=int, dest='sync_every')
     parser.add_argument('--mode', help='Mode of operation.'
-                        'One of "sgd" (Stohastic Gradient Descent), "easgd" (Elastic Averaging SGD) or '
+                        'One of "sgd" (Stohastic Gradient Descent), "sgdm" (Stohastic Gradient Descent with Momentum),'
+                        '"easgd" (Elastic Averaging SGD) or '
                         '"gem" (Gradient Energy Matching)',
                         default='sgd')
     parser.add_argument('--elastic-force', help='beta parameter for EASGD', type=float, default=0.9)
@@ -79,7 +76,7 @@ if __name__ == '__main__':
     parser.add_argument('--log-level', default='info', dest='log_level', help='log level (debug, info, warn, error)')
 
     # Model configuration
-    parser.add_argument('--batch-size', type=int, default=64, help='input batch size for training (default: 64)')
+    parser.add_argument('--batch-size', type=int, default=128, help='input batch size for training (default: 64)')
     parser.add_argument('--epochs', type=int, default=25,  help='number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=0.05, help='learning rate (default: 0.01)')
     parser.add_argument('--lr-rate-decay', type=float, default=0.0, help='learning rate decay (default: 0)')
@@ -160,8 +157,7 @@ if __name__ == '__main__':
                         x_test=X_test, y_test=Y_test)
             del X_test, Y_test
 
-    validate_every = int(args.n_training_samples // args.batch_size)
-
+    validate_every = int((args.n_training_samples // args.batch_size) * (comm.Get_size() - 1))
 
     # Some input arguments may be ignored depending on chosen algorithm
     if args.mode == 'easgd':
@@ -179,7 +175,7 @@ if __name__ == '__main__':
                     worker_optimizer_params=args.worker_optimizer_params,
                     learning_rate=args.gem_lr, momentum=args.gem_momentum, kappa=args.gem_kappa)
     else:
-        algo = Algo(optimizer='sgd', loss=args.loss, validate_every=validate_every,
+        algo = Algo(optimizer='sgdm', loss=args.loss, validate_every=validate_every,
                     sync_every=args.sync_every,
                     worker_optimizer=args.worker_optimizer,
                     worker_optimizer_params=args.worker_optimizer_params,
@@ -193,7 +189,6 @@ if __name__ == '__main__':
 
     # Model architecture higgs
     # dimensions = (28, 1000, 1000, 1000, 2)
-
 
     model = MPIModel(model=SET_MLP(dimensions, (Relu, Relu, Relu, Sigmoid), **model_config))
 

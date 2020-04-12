@@ -1,6 +1,6 @@
 import numpy as np
 import copy
-from models.set_mlp import *
+from models.set_mlp_mpi import *
 import logging
 
 
@@ -40,7 +40,7 @@ class MPIModel(object):
         self.model.set_parameters(w)
 
     def train_on_batch(self, **args):
-        return np.asarray(self.model.train_on_batch(**args))
+        return self.model.train_on_batch(**args)
 
     def test_on_batch(self, **args):
         return np.asarray(self.model.test_on_batch(**args))

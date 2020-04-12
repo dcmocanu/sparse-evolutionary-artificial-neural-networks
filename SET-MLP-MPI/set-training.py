@@ -1,4 +1,4 @@
-from models.set_mlp import *
+from models.set_mlp_sequential import *
 import time
 import argparse
 import os
@@ -36,9 +36,9 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
-parser.add_argument('--n-training-samples', type=int, default=50000, metavar='N',
+parser.add_argument('--n-training-samples', type=int, default=2000, metavar='N',
                     help='Number of training samples')
-parser.add_argument('--n-testing-samples', type=int, default=10000, metavar='N',
+parser.add_argument('--n-testing-samples', type=int, default=1000, metavar='N',
                     help='Number of testing samples')
 parser.add_argument('--n-processes', type=int, default=6, metavar='N',
                     help='how many training processes to use (default: 2)')
@@ -88,7 +88,7 @@ if __name__ == "__main__":
 
         # Load augmented dataset
         start_time = time.time()
-        X_train, Y_train, X_test, Y_test = load_cifar10_500K_data()
+        X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
         step_time = time.time() - start_time
         print("Loading augmented dataset time: ", step_time)
 

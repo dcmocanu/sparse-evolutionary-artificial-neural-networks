@@ -3,7 +3,7 @@
 import numpy as np
 import copy
 import logging
-
+import scipy.sparse as sparse
 
 class Optimizer(object):
     """Base class for optimization algorithms.
@@ -40,18 +40,53 @@ class VanillaSGD(Optimizer):
 
     def __init__(self, learning_rate=0.5):
         super(VanillaSGD, self).__init__()
-        self.learning_rate = 0.5
+        self.learning_rate = learning_rate
 
     def apply_update(self, weights, gradient):
         """Move weights in the direction of the gradient, by the amount of the
             learning rate."""
-        for k, dw in gradient['pdw'].items():
-            weights['pdw'][k] = self.learning_rate * dw
-            weights['w'][k] += weights['pdw'][k]
 
-        for k, delta in gradient['pdd'].items():
-            weights['pdd'][k] = self.learning_rate * delta
-            weights['b'][k] += weights['pdd'][k]
+        for index, v in gradient.items():
+            dw = v[0]
+            delta = v[1]
+
+            dw = retain_valid_updates(weights['w'][index], dw)
+            weights['pdw'][index] = - self.learning_rate * dw
+            weights['pdd'][index] = - self.learning_rate * np.mean(delta, 0)
+
+            weights['w'][index] += weights['pdw'][index]
+            weights['b'][index] += weights['pdd'][index]
+
+        return weights
+
+
+class MomentumSGD(Optimizer):
+    """Stochastic gradient descent with momentum and weight decay
+          learning_rate: learning rate parameter for SGD"""
+
+    def __init__(self, learning_rate=0.5):
+        super(MomentumSGD, self).__init__()
+        self.learning_rate = learning_rate
+
+    def apply_update(self, weights, gradient):
+        """Move weights in the direction of the gradient, by the amount of the
+            learning rate."""
+
+        for index, v in gradient.items():
+            dw = v[0]
+            delta = v[1]
+
+            # perform the update with momentum
+            if index not in weights['pdw']:
+                weights['pdw'][index] = - self.learning_rate * dw
+                weights['pdd'][index] = - self.learning_rate * np.mean(delta, 0)
+            else:
+                dw = retain_valid_updates(weights['w'][index], dw)
+                weights['pdw'][index] = 0.5 * weights['pdw'][index] - self.learning_rate * dw
+                weights['pdd'][index] = 0.5 * weights['pdd'][index] - self.learning_rate * np.mean(delta, 0)
+
+            weights['w'][index] += weights['pdw'][index] - 0.0002 * weights['w'][index]
+            weights['b'][index] += weights['pdd'][index] - 0.0002 * weights['b'][index]
 
         return weights
 
@@ -279,7 +314,7 @@ class GEM(Optimizer):
         kappa: Proxy amplification. Experimental results show 2 is a good value.
         """
 
-    def __init__(self, learning_rate=0.01, momentum=0.9, kappa=1.0):
+    def __init__(self, learning_rate=0.05, momentum=0.9, kappa=1.0):
         super(GEM, self).__init__()
         self.learning_rate = learning_rate
         self.momentum = momentum
@@ -354,12 +389,29 @@ def get_optimizer(name):
     lookup = {
             # Native optimizers
             'sgd':           VanillaSGD,
+            'sgdm':          MomentumSGD,
             'adadelta':      AdaDelta,
             'rmsprop':       RMSProp,
             'adam':          Adam,
             'gem':           GEM,
             }
     return lookup[name]
+
+
+def retain_valid_updates(weights, gradient):
+    cols = gradient.shape[1]
+    Ia, Ja, Va = sparse.find(weights)
+    Ib, Jb, Vb = sparse.find(gradient)
+    Ka = Ia * cols + Ja
+    Kb = Ib * cols + Jb
+
+    indices = list(set(Kb).difference(set(Ka)))
+    if indices:
+        rows, cols = np.unravel_index(indices, gradient.shape)
+        gradient[rows, cols] = 0
+        gradient.eliminate_zeros()
+
+    return gradient
 
 
 class OptimizerBuilder(object):
@@ -371,8 +423,8 @@ class OptimizerBuilder(object):
         if self.config is None:
             self.config = {}
         if self.name == 'sgd' and 'lr' not in self.config:
-            logging.warning("Learning rate for SGD not set, using 1.0.")
-            self.config['lr'] = 0.5
+            logging.warning("Learning rate for SGD not set, using 0.1.")
+            self.config['lr'] = 0.1
 
     def build(self):
         from keras.optimizers import deserialize

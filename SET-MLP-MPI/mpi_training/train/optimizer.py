@@ -423,8 +423,8 @@ class OptimizerBuilder(object):
         if self.config is None:
             self.config = {}
         if self.name == 'sgd' and 'lr' not in self.config:
-            logging.warning("Learning rate for SGD not set, using 0.1.")
-            self.config['lr'] = 0.1
+            logging.warning("Learning rate for SGD not set, using 1.")
+            self.config['lr'] = 1.
 
     def build(self):
         from keras.optimizers import deserialize

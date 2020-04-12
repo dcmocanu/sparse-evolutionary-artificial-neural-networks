@@ -36,10 +36,11 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
-parser.add_argument('--n-training-samples', type=int, default=2000, metavar='N',
+parser.add_argument('--n-training-samples', type=int, default=50000, metavar='N',
                     help='Number of training samples')
-parser.add_argument('--n-testing-samples', type=int, default=1000, metavar='N',
+parser.add_argument('--n-testing-samples', type=int, default=10000, metavar='N',
                     help='Number of testing samples')
+parser.add_argument('--n-validation-samples', type=int, default=10000, help='Number of validation samples')
 parser.add_argument('--n-processes', type=int, default=6, metavar='N',
                     help='how many training processes to use (default: 2)')
 parser.add_argument('--cuda', action='store_true', default=False,
@@ -99,7 +100,7 @@ if __name__ == "__main__":
         print("Number of neurons per layer:", X_train.shape[1], n_hidden_neurons, n_hidden_neurons,
         n_hidden_neurons, Y_train.shape[1])
 
-        set_mlp = SET_MLP((X_train.shape[1], n_hidden_neurons, n_hidden_neurons, n_hidden_neurons,
+        set_mlp = SET_MLP((X_train.shape[1], 4000, 1000, 4000,
                            Y_train.shape[1]), (Relu, Relu, Relu, Sigmoid), **config)
         start_time = time.time()
         set_mlp.fit(X_train, Y_train, X_test, Y_test, batch_size, testing=True,

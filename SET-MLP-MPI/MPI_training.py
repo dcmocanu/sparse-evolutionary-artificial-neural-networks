@@ -1,5 +1,6 @@
 import argparse
 import logging
+import psutil
 from models.set_mlp_mpi import *
 from utils.load_data import *
 
@@ -77,7 +78,7 @@ if __name__ == '__main__':
 
     # Model configuration
     parser.add_argument('--batch-size', type=int, default=128, help='input batch size for training (default: 64)')
-    parser.add_argument('--epochs', type=int, default=25,  help='number of epochs to train (default: 10)')
+    parser.add_argument('--epochs', type=int, default=1,  help='number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=0.05, help='learning rate (default: 0.01)')
     parser.add_argument('--lr-rate-decay', type=float, default=0.0, help='learning rate decay (default: 0)')
     parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum (default: 0.5)')
@@ -91,7 +92,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=1, help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=10,
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--n-training-samples', type=int, default=5000, help='Number of training samples')
+    parser.add_argument('--n-training-samples', type=int, default=10000, help='Number of training samples')
     parser.add_argument('--n-testing-samples', type=int, default=1000, help='Number of testing samples')
 
     args = parser.parse_args()
@@ -125,10 +126,11 @@ if __name__ == '__main__':
 
     if comm.Get_size() == 1:
         # Load dataset
-        X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
-        data = Data(batch_size=args.batch_size, x_train=X_train,
-                    y_train=Y_train,
-                    x_test=X_test, y_test=Y_test)
+        X_train, Y_train, X_test, Y_test, X_val, Y_val = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
+        data = Data(batch_size=args.batch_size,
+                    x_train=X_train, y_train=Y_train,
+                    x_test=X_test, y_test=Y_test,
+                    x_val=X_val, y_val=Y_val)
     else:
         if rank != 0:
             # Load augmented dataset
@@ -141,21 +143,25 @@ if __name__ == '__main__':
 
             # Load normal dataset
             partitions = shared_partitions(args.n_training_samples, comm.Get_size() - 1, args.batch_size)
-            X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
-            data = Data(batch_size=args.batch_size, x_train=X_train[partitions[rank - 1]],
-                        y_train=Y_train[partitions[rank - 1]],
-                        x_test=X_test, y_test=Y_test)
+            X_train, Y_train, X_test, Y_test, X_val, Y_val = load_cifar10_data(args.n_training_samples,
+                                                                               args.n_testing_samples)
+            data = Data(batch_size=args.batch_size,
+                        x_train=X_train[partitions[rank - 1]], y_train=Y_train[partitions[rank - 1]],
+                        x_test=X_test, y_test=Y_test,
+                        x_val=X_val, y_val=Y_val)
 
-            del X_train, Y_train, X_test, Y_test
+            del X_train, Y_train, X_test, Y_test, X_val, Y_val
         else:
             # X_test = np.load('mpi_training/cifar10/x_test.npy', mmap_mode='r')
             # Y_test = np.load('mpi_training/cifar10/y_test.npy', mmap_mode='r')
 
-            _, _, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
-            data = Data(batch_size=args.batch_size, x_train=None,
-                        y_train=None,
-                        x_test=X_test, y_test=Y_test)
-            del X_test, Y_test
+            _, _,  X_test, Y_test, X_val, Y_val = load_cifar10_data(args.n_training_samples,
+                                                                    args.n_testing_samples)
+            data = Data(batch_size=args.batch_size,
+                        x_train=None, y_train=None,
+                        x_test=X_test, y_test=Y_test,
+                        x_val=X_val, y_val=Y_val)
+            del X_test, Y_test, X_val, Y_val
 
     validate_every = int((args.n_training_samples // args.batch_size) * (comm.Get_size() - 1))
 
@@ -208,8 +214,9 @@ if __name__ == '__main__':
         manager.free_comms()
         logging.info("Training finished in {0:.3f} seconds".format(delta_t))
 
-        logging.info("Final performance of the model")
-        manager.process.validate(manager.process.weights)
+        logging.info("------------------------------------------------------------------------------------------------")
+        logging.info("Final performance of the model on the test dataset")
+        manager.process.test(manager.process.weights)
 
     comm.barrier()
     logging.info("Terminating")

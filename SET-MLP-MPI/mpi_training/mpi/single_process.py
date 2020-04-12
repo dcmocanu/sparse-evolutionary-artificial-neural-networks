@@ -64,3 +64,6 @@ class MPISingleWorker(MPIWorker):
 
     def validate(self, weights):
         return MPIMaster.validate_aux(self, weights, self.model)
+
+    def test(self, weights):
+        return MPIMaster.test_aux(self, weights, self.model)

@@ -363,7 +363,7 @@ class MPIProcess(object):
               obj: list of destination arrays
               tag: MPI tag accompanying the message
               add_to_existing: if true, add to existing object instead of replacing"""
-        if False:
+        if add_to_existing:
 
             # TODO this needs some work
             tmp = self.model.format_update()
@@ -376,8 +376,6 @@ class MPIProcess(object):
             else:
                 obj = tmp
             return obj
-        #if tag =='update': self.logger.info(f'tmp {tag}')
-        #if tag =='weights': self.logger.info(f'tmp {obj}')
         return self.recv(obj, tag, comm=comm, source=source, buffer=False)
 
     def recv_weights(self, comm=None, source=None, add_to_existing=False):
@@ -474,6 +472,10 @@ class MPIWorker(MPIProcess):
 
         for epoch in range(1, self.num_epochs + 1):
             self.logger.info("Beginning epoch {:d}".format(self.epoch + epoch))
+
+            if self.monitor:
+                self.monitor.start_monitor()
+
             self.data.shuffle()
             epoch_metrics = np.zeros((1,))
             i_batch = 0
@@ -531,7 +533,7 @@ class MPIWorker(MPIProcess):
         self.logger.debug("Starting validation")
         val_metrics = np.zeros((1,))
         i_batch = 0
-        for i_batch, batch in enumerate(self.data.generate_test_data()):
+        for i_batch, batch in enumerate(self.data.generate_validation_data()):
             new_val_metrics = model.test_on_batch(x=batch[0], y=batch[1])
 
             if val_metrics.shape != new_val_metrics.shape:
@@ -585,6 +587,7 @@ class MPIMaster(MPIProcess):
         if parent_rank is not None:
             self.has_parent = True
         self.best_val_loss = None
+        self.inputLayerConnections = []
 
         self.num_workers = child_comm.Get_size() - 1  # all processes but one are workers
         self.num_sync_workers = num_sync_workers
@@ -784,7 +787,34 @@ class MPIMaster(MPIProcess):
     def validate(self, weights):
         return self.validate_aux(weights, self.model)
 
+    def test(self, weights):
+        return self.test_aux(weights, self.model)
+
     def validate_aux(self, weights, model):
+        """Compute the loss on the validation data.
+            Return a dictionary of validation metrics."""
+        if self.has_parent:
+            return {}
+        model.set_weights(weights)
+
+        self.logger.debug("Starting validation")
+        val_metrics = np.zeros((1,))
+        i_batch = 0
+        for i_batch, batch in enumerate(self.data.generate_validation_data()):
+            new_val_metrics = model.test_on_batch(x=batch[0], y=batch[1])
+
+            if val_metrics.shape != new_val_metrics.shape:
+                val_metrics = np.zeros(new_val_metrics.shape)
+            val_metrics += new_val_metrics
+
+        val_metrics = val_metrics / float(i_batch + 1)
+
+        self.logger.info("Validation metrics:")
+        self.print_metrics(val_metrics)
+        self.logger.debug("Ending validation")
+        return None
+
+    def test_aux(self, weights, model):
         """Compute the loss on the validation data.
             Return a dictionary of validation metrics."""
         if self.has_parent:

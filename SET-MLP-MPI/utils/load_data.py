@@ -62,21 +62,23 @@ def load_cifar10_data(n_training_samples, n_testing_samples):
     np.random.seed(0)
 
     # read CIFAR10 data
-    (x_train, y_train), (x_test, y_test) = cifar10.load_data()
+    (x, y), (x_test, y_test) = cifar10.load_data()
 
-    y_train = np_utils.to_categorical(y_train, 10)
+    y = np_utils.to_categorical(y, 10)
     y_test = np_utils.to_categorical(y_test, 10)
-    x_train = x_train.astype('float32')
+    x = x.astype('float32')
     x_test = x_test.astype('float32')
 
-    index_train = np.arange(x_train.shape[0])
+    index_train = np.arange(x.shape[0])
     np.random.shuffle(index_train)
 
     index_test = np.arange(x_test.shape[0])
     np.random.shuffle(index_test)
 
-    x_train = x_train[index_train[0:n_training_samples], :]
-    y_train = y_train[index_train[0:n_training_samples], :]
+    x_train = x[index_train[0:n_training_samples], :]
+    y_train = y[index_train[0:n_training_samples], :]
+    x_val = x[index_train[n_training_samples:n_training_samples+n_testing_samples], :]
+    y_val = y[index_train[n_training_samples:n_training_samples+n_testing_samples], :]
     x_test = x_test[index_test[0:n_testing_samples], :]
     y_test = y_test[index_test[0:n_testing_samples], :]
 
@@ -85,11 +87,13 @@ def load_cifar10_data(n_training_samples, n_testing_samples):
     x_train_std = np.std(x_train, axis=0)
     x_train = (x_train - x_train_mean) / x_train_std
     x_test = (x_test - x_train_mean) / x_train_std
+    x_val = (x_val - x_train_mean) / x_train_std
 
     x_train = x_train.reshape(-1, 32 * 32 * 3).astype('float64')
     x_test = x_test.reshape(-1, 32 * 32 * 3).astype('float64')
+    x_val = x_val.reshape(-1, 32 * 32 * 3).astype('float64')
 
-    return x_train, y_train, x_test, y_test
+    return x_train, y_train, x_test, y_test, x_val, y_val
 
 
 def load_images(curr_dir, label):

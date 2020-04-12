@@ -56,7 +56,6 @@ class MPIProcess(object):
         self.algo = algo
         self.model = model
         self.verbose = verbose
-        self.histories = {}
         self.save_filename = save_filename
 
         self.inputLayerConnections =[]
@@ -66,7 +65,7 @@ class MPIProcess(object):
         self.time_step = 0
         self._is_shadow = (self.process_comm is not None and self.process_comm.Get_rank() != 0)
 
-        self.monitor = Monitor() if monitor else None
+        self.monitor = Monitor(save_filename=save_filename) if monitor else None
 
         process_type = self.__class__.__name__.replace('MPI', '')[0]
         set_logging_prefix(
@@ -96,23 +95,6 @@ class MPIProcess(object):
             self.bcast_weights(self.parent_comm)
         if (self.parent_rank is not None and self.parent_comm is not None) or (self.process_comm):
             self.train()
-
-    def record_details(self, json_name=None, meta=None):
-        """to be implemented by the specific process
-        """
-        pass
-
-    def history_key(self):
-        # return str(self.rank)
-        return self.ranks
-
-    def update_monitor(self, perf):
-        r = self.history_key()
-        self.histories.setdefault(r, {})['monitor'] = perf
-
-    def update_history(self, items):
-        r = self.history_key()
-        self.model.update_history(items, self.histories.setdefault(r, {}))
 
     def is_shadow(self, sync=False):
         """signals that the process is a sub-process and should not act normally"""
@@ -167,11 +149,13 @@ class MPIProcess(object):
         if self.is_shadow():
             return
 
+        t1 = datetime.datetime.now()
         self.send_update(check_permission=True)
         self.time_step = self.recv_time_step()
         self.weights = self.recv_weights()
-        #self.algo.set_worker_model_weights(self.model, self.weights)
-        self.model.set_weights(self.weights)
+        self.algo.set_worker_model_weights(self.model, self.weights)
+        t2 = datetime.datetime.now()
+        self.logger.info(f"Worker idle time: {t2 - t1}")
 
     def apply_update(self):
         """Updates weights according to update received from worker process"""
@@ -190,7 +174,6 @@ class MPIProcess(object):
         'begin_update': 3,
         'time': 4,
         'bool': 5,
-        'history': 6,
         'weights': 12,
         'update': 12,
         'begin_gem': 13,
@@ -231,9 +214,6 @@ class MPIProcess(object):
                 raise Error("Attempting to receive %s from parent, but parent rank is None" % tag)
             source = self.parent_rank
         tag_num = self.lookup_mpi_tag(tag)
-        if tag == 'history':
-            obj = comm.recv(source=source, tag=tag_num, status=status)
-            return obj
         # if tag in ['bool','time']:
         #    comm.Recv(obj, source=source, tag=tag_num, status=status )
         #    return obj
@@ -269,9 +249,6 @@ class MPIProcess(object):
                 raise Error("Attempting to send %s to parent, but parent rank is None" % tag)
             dest = self.parent_rank
         tag_num = self.lookup_mpi_tag(tag)
-        if tag in ['history']:
-            comm.send(obj, dest=dest, tag=tag_num)
-            return
         # if tag in ['time']:
         #    comm.Send( obj, dest=dest, tag=tag_num )
         #    return
@@ -314,12 +291,6 @@ class MPIProcess(object):
         """Send exit tag to parent process, if parent process exists"""
         if self.parent_rank is not None:
             self.send(None, 'exit')
-
-    def send_history_to_parent(self):
-        if self.is_shadow(): return
-        """Send keras history or dict of keras histories"""
-        if self.parent_rank is not None:
-            self.send(obj=self.histories, tag='history')
 
     def send_arrays(self, obj, expect_tag, tag, comm=None, dest=None, check_permission=False):
         """Send a list of numpy arrays to the process specified by comm (MPI communicator)
@@ -462,7 +433,7 @@ class MPIWorker(MPIProcess):
         self.apply_update()
         self.algo.set_worker_model_weights(self.model, self.weights)
 
-    def train(self, testing=True):
+    def train(self, testing=False):
         """  Wait for the signal to train. Then train for num_epochs epochs.
             In each step, train on one batch of input data, then send the update to the master
             and wait to receive a new set of weights.  When done, send 'exit' signal to parent.
@@ -539,12 +510,7 @@ class MPIWorker(MPIProcess):
 
         self.logger.debug("Signing off")
 
-        if self.monitor:
-            stats = self.monitor.get_stats()
-            self.update_monitor(stats)
-
         self.send_exit_to_parent()
-        self.send_history_to_parent()
 
     def await_signal_from_parent(self):
         """Wait for 'train' signal from parent process"""
@@ -571,7 +537,6 @@ class MPIMaster(MPIProcess):
           waiting_workers_list: list of workers that sent updates and are now waiting
           num_sync_workers: number of worker updates to receive before performing an update
           update_tag: MPI tag to expect when workers send updates
-          histories: model histories collected from workers
           epoch: current epoch number
     """
 
@@ -699,8 +664,7 @@ class MPIMaster(MPIProcess):
                 self.epoch += 1
 
     def do_worker_finish_sequence(self, worker_id):
-        """Actions to take when a worker finishes training and returns its history"""
-        self.histories.update(self.recv_history_from_child(worker_id))
+        """Actions to take when a worker finishes training"""
         self.running_workers.remove(worker_id)
         self.num_sync_workers -= 1
 
@@ -749,14 +713,23 @@ class MPIMaster(MPIProcess):
         self.running_workers = list(range(1, self.num_workers + 1))
         self.waiting_workers_list = []
 
-        self.logger.info("Master.train")
+        self.logger.info("Master initialize training")
+
+        if self.monitor:
+            self.monitor.start_monitor()
 
         while self.running_workers:
+            t1 = datetime.datetime.now()
             self.recv_any_from_child(status)
+            t2 = datetime.datetime.now()
+            self.logger.info(f"Master idle time: {t2 - t1}")
             self.process_message(status)
 
             if self.stop_training:
                 self.shut_down_workers()
+
+        if self.monitor:
+            self.monitor.stop_monitor()
 
         np.savez_compressed(self.save_filename + "_weights.npz", *self.weights_to_save)
         np.savez_compressed(self.save_filename + "_biases.npz", *self.biases_to_save)
@@ -764,37 +737,12 @@ class MPIMaster(MPIProcess):
         self.logger.info("Done training")
         # If we did not finish the last epoch, validate one more time.
         # (this happens if the batch size does not divide the dataset size)
-        if self.epoch < self.num_epochs or not self.histories.get(self.history_key(), None):
+        if self.epoch < self.num_epochs:
             self.epoch += 1
             self.validate(self.weights)
 
         self.send_exit_to_parent()
-        self.send_history_to_parent()
-
         self.stop_time = time.time()
-
-    def record_details(self, json_name=None, meta=None):
-        ## for the uber master, save yourself
-        out_dict = {"train_time": self.stop_time - self.start_time,
-                    "history": self.histories}
-        if meta is not None:
-            out_dict.update(meta)
-
-        if not json_name:
-            json_name = 'master-history-%s-%s.json' % (os.getpid(), self.start_time)
-
-        if self.model:
-            model_file = json_name.replace('.json', '.model')
-            self.model.save(model_file)
-
-        if self.algo:
-            algo_file = json_name.replace('.json', '.algo')
-            self.algo.save(algo_file)
-
-        with open(json_name, 'w') as out_file:
-            out_file.write(json.dumps(out_dict, indent=4, separators=(',', ': ')))
-
-        return self.histories
 
     def validate(self, weights):
         return self.validate_aux(weights, self.model)
@@ -874,9 +822,6 @@ class MPIMaster(MPIProcess):
             populated with information about received message"""
         self.recv(tag='any', source=MPI.ANY_SOURCE, status=status, comm=self.child_comm)
         return status
-
-    def recv_history_from_child(self, child):
-        return self.recv(tag='history', source=child, comm=self.child_comm)
 
     def send_exit_to_child(self, child, comm=None):
         if comm is None:

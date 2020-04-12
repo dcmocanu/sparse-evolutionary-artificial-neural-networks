@@ -187,7 +187,7 @@ if __name__ == '__main__':
 
     # Creating the MPIManager object causes all needed worker and master nodes to be created
     manager = MPIManager(comm=comm, data=data, algo=algo, model=model,
-                         num_epochs=args.epochs*num_workers, num_masters=args.masters,
+                         num_epochs=args.epochs, num_masters=args.masters,
                          num_processes=args.processes, synchronous=args.synchronous,
                          verbose=args.verbose, monitor=args.monitor, save_filename=save_filename)
 

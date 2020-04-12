@@ -47,8 +47,8 @@ class MPIManager(object):
           verbose: whether to make MPIProcess objects verbose
     """
 
-    def __init__(self, comm, data, algo, model, num_epochs, num_masters=1, num_processes=1, synchronous=False,
-                 verbose=False, monitor=False):
+    def __init__(self, comm, data, algo, model, num_epochs, save_filename, num_masters=1, num_processes=1,
+                 synchronous=False, verbose=False, monitor=False):
         """Create MPI communicator(s) needed for training, and create worker
             or master object as appropriate.
             Params:
@@ -68,6 +68,7 @@ class MPIManager(object):
         self.model = model
         self.num_masters = num_masters
         self.num_processes = num_processes
+        self.save_filename = save_filename
 
         if comm.Get_size() != 1:
             n_instances, remainder = divmod(comm.Get_size() - self.num_masters, self.num_processes)
@@ -126,7 +127,7 @@ class MPIManager(object):
         if not self.is_master and self.comm_block:
             self.worker_id = self.comm_block.Get_rank()
 
-        logging.info("processes %s", str(processes))
+        logging.debug("processes %s", str(processes))
         for ipr, pr in enumerate(processes):
             if rank in pr and len(pr) > 1:
                 ## make the communicator for that process group
@@ -170,7 +171,7 @@ class MPIManager(object):
                                          data=self.data, algo=self.algo, model=self.model,
                                          child_comm=child_comm, num_epochs=self.num_epochs,
                                          num_sync_workers=num_sync_workers,
-                                         verbose=self.verbose
+                                         verbose=self.verbose, save_filename=self.save_filename
                                          )
             else:
 
@@ -181,7 +182,8 @@ class MPIManager(object):
                                          parent_rank=self.parent_rank,
                                          num_epochs=self.num_epochs,
                                          verbose=self.verbose,
-                                         monitor=self.monitor
+                                         monitor=self.monitor,
+                                         save_filename=self.save_filename
                                          )
         else:  # Single Process mode
             from mpi_training.mpi.single_process import MPISingleWorker
@@ -189,7 +191,8 @@ class MPIManager(object):
                                            model=self.model,
                                            num_epochs=self.num_epochs,
                                            verbose=self.verbose,
-                                           monitor=self.monitor)
+                                           monitor=self.monitor,
+                                           save_filename=self.save_filename)
 
     def train(self):
         if self.parent_rank is None:

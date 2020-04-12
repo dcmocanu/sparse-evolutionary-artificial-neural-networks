@@ -1,7 +1,6 @@
 ### Optimizers used to update master process weights
 
 import numpy as np
-import copy
 import logging
 import scipy.sparse as sparse
 
@@ -19,26 +18,11 @@ class Optimizer(object):
         raise NotImplementedError
 
 
-class MultiOptimizer(Optimizer):
-    def __init__(self, opt, s):
-        self.opts = [copy.deepcopy(opt) for i in range(s)]
-
-    def reset(self):
-        for o in self.opts:
-            o.reset()
-
-    def apply_update(self, weights, gradient):
-        r = []
-        for o, w, g in zip(self.opts, weights, gradient):
-            r.append( o.apply_update(w, g) )
-        return r
-
-
 class VanillaSGD(Optimizer):
     """Stochastic gradient descent with no extra frills.
           learning_rate: learning rate parameter for SGD"""
 
-    def __init__(self, learning_rate=0.5):
+    def __init__(self, learning_rate):
         super(VanillaSGD, self).__init__()
         self.learning_rate = learning_rate
 
@@ -64,9 +48,11 @@ class MomentumSGD(Optimizer):
     """Stochastic gradient descent with momentum and weight decay
           learning_rate: learning rate parameter for SGD"""
 
-    def __init__(self, learning_rate=0.5):
+    def __init__(self, learning_rate=0.05, weight_decay=0.0002, momentum=0.9):
         super(MomentumSGD, self).__init__()
         self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
+        self.momentum = momentum
 
     def apply_update(self, weights, gradient):
         """Move weights in the direction of the gradient, by the amount of the
@@ -82,11 +68,11 @@ class MomentumSGD(Optimizer):
                 weights['pdd'][index] = - self.learning_rate * np.mean(delta, 0)
             else:
                 dw = retain_valid_updates(weights['w'][index], dw)
-                weights['pdw'][index] = 0.5 * weights['pdw'][index] - self.learning_rate * dw
-                weights['pdd'][index] = 0.5 * weights['pdd'][index] - self.learning_rate * np.mean(delta, 0)
+                weights['pdw'][index] = self.momentum * weights['pdw'][index] - self.learning_rate * dw
+                weights['pdd'][index] = self.momentum * weights['pdd'][index] - self.learning_rate * np.mean(delta, 0)
 
-            weights['w'][index] += weights['pdw'][index] - 0.0002 * weights['w'][index]
-            weights['b'][index] += weights['pdd'][index] - 0.0002 * weights['b'][index]
+            weights['w'][index] += weights['pdw'][index] - self.weight_decay * weights['w'][index]
+            weights['b'][index] += weights['pdd'][index] - self.weight_decay * weights['b'][index]
 
         return weights
 
@@ -423,8 +409,8 @@ class OptimizerBuilder(object):
         if self.config is None:
             self.config = {}
         if self.name == 'sgd' and 'lr' not in self.config:
-            logging.warning("Learning rate for SGD not set, using 1.")
-            self.config['lr'] = 1.
+            logging.warning("Learning rate for SGD not set, using 0.1")
+            self.config['lr'] = 0.1
 
     def build(self):
         from keras.optimizers import deserialize

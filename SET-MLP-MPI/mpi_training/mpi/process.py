@@ -34,7 +34,7 @@ class MPIProcess(object):
     """
 
     def __init__(self, parent_comm, process_comm, parent_rank=None, num_epochs=1, data=None, algo=None,
-                 model=None, verbose=False, monitor=False):
+                 model=None, verbose=False, monitor=False, save_filename=None,):
         """If the rank of the parent is given, initialize this process and immediately start
             training. If no parent is indicated, training should be launched with train().
 
@@ -57,6 +57,9 @@ class MPIProcess(object):
         self.model = model
         self.verbose = verbose
         self.histories = {}
+        self.save_filename = save_filename
+
+        self.inputLayerConnections =[]
 
         self.update = None
         self.stop_training = False
@@ -418,8 +421,8 @@ class MPIProcess(object):
 class MPIWorker(MPIProcess):
     """This class trains its NN model and exchanges weight updates with its parent."""
 
-    def __init__(self, data, algo, model, process_comm, parent_comm, parent_rank=None,
-                 num_epochs=1, verbose=False, monitor=False):
+    def __init__(self, data, algo, model, process_comm,parent_comm, parent_rank=None,
+                 num_epochs=1, verbose=False, monitor=False, save_filename=None):
         """Raises an exception if no parent rank is provided. Sets the number of epochs
             using the argument provided, then calls the parent constructor"""
         info = "Creating MPIWorker with rank {0} and parent rank {1} on a communicator of size {2}"
@@ -430,7 +433,7 @@ class MPIWorker(MPIProcess):
 
         super(MPIWorker, self).__init__(parent_comm, process_comm, parent_rank,
                                         num_epochs=num_epochs, data=data, algo=algo, model=model,
-                                        verbose=verbose, monitor=monitor)
+                                        verbose=verbose, monitor=monitor, save_filename=save_filename)
 
     def build_model(self):
         super(MPIWorker, self).build_model()
@@ -459,7 +462,7 @@ class MPIWorker(MPIProcess):
         self.apply_update()
         self.algo.set_worker_model_weights(self.model, self.weights)
 
-    def train(self, testing=False):
+    def train(self, testing=True):
         """  Wait for the signal to train. Then train for num_epochs epochs.
             In each step, train on one batch of input data, then send the update to the master
             and wait to receive a new set of weights.  When done, send 'exit' signal to parent.
@@ -470,6 +473,9 @@ class MPIWorker(MPIProcess):
         # periodically check this request to see if the parent has told us to stop training
         exit_request = self.recv_exit_from_parent()
 
+        maximum_accuracy = 0
+        metrics = np.zeros((self.num_epochs, 6))
+
         for epoch in range(1, self.num_epochs + 1):
             self.logger.info("Beginning epoch {:d}".format(self.epoch + epoch))
 
@@ -477,8 +483,6 @@ class MPIWorker(MPIProcess):
                 self.monitor.start_monitor()
 
             self.data.shuffle()
-            epoch_metrics = np.zeros((1,))
-            i_batch = 0
 
             for i_batch, batch in enumerate(self.data.generate_data()):
 
@@ -488,12 +492,7 @@ class MPIWorker(MPIProcess):
                     if self.process_comm.Get_rank() != 0:
                         self.model.set_weights(self.weights)
 
-                loss, accuracy, self.update = self.model.train_on_batch(x=batch[0], y=batch[1])
-                train_metrics = np.asarray((loss, accuracy))
-
-                if epoch_metrics.shape != train_metrics.shape:
-                    epoch_metrics = np.zeros(train_metrics.shape)
-                epoch_metrics += train_metrics
+                self.update = self.model.train_on_batch(x=batch[0], y=batch[1])
 
                 if self.algo.should_sync():
                     self.sync_with_parent()
@@ -509,12 +508,31 @@ class MPIWorker(MPIProcess):
 
             if self.monitor:
                 self.monitor.stop_monitor()
-            epoch_metrics = epoch_metrics / float(i_batch + 1)
 
             if testing:
-                self.logger.info("Epoch metrics:")
-                self.print_metrics(epoch_metrics)
-                self.validate(self.weights, self.model)
+                t3 = datetime.datetime.now()
+                accuracy_test, activations_test = self.model.predict(self.data.x_test, self.data.y_test)
+                accuracy_val, activations_val = self.model.predict(self.data.x_val, self.data.y_val)
+                accuracy_train, activations_train = self.model.predict(self.data.x_train, self.data.y_train)
+                t4 = datetime.datetime.now()
+                maximum_accuracy = max(maximum_accuracy, accuracy_val)
+                loss_test = self.model.compute_loss(self.data.y_test, activations_test)
+                loss_val = self.model.compute_loss(self.data.y_val, activations_val)
+                loss_train = self.model.compute_loss(self.data.y_train, activations_train)
+                metrics[epoch - 1, 0] = loss_train
+                metrics[epoch - 1, 1] = loss_val
+                metrics[epoch - 1, 2] = loss_test
+                metrics[epoch - 1, 3] = accuracy_train
+                metrics[epoch - 1, 4] = accuracy_val
+                metrics[epoch - 1, 5] = accuracy_test
+
+                self.logger.debug("Validation metrics:")
+                self.logger.debug(f"Testing time: {t4 - t3}\n; Loss val: {loss_val}; Loss test: {loss_test}; \n"
+                                  f"Accuracy val: {accuracy_val}; Accuracy test: {accuracy_test}; \n"
+                                  f"Maximum accuracy val: {maximum_accuracy}")
+                # save performance metrics values in a file
+                if (self.save_filename != ""):
+                    np.savetxt(self.save_filename + ".txt", metrics)
 
             if self.stop_training:
                 break
@@ -522,29 +540,11 @@ class MPIWorker(MPIProcess):
         self.logger.debug("Signing off")
 
         if self.monitor:
-
             stats = self.monitor.get_stats()
             self.update_monitor(stats)
 
         self.send_exit_to_parent()
         self.send_history_to_parent()
-
-    def validate(self, weights, model):
-        self.logger.debug("Starting validation")
-        val_metrics = np.zeros((1,))
-        i_batch = 0
-        for i_batch, batch in enumerate(self.data.generate_validation_data()):
-            new_val_metrics = model.test_on_batch(x=batch[0], y=batch[1])
-
-            if val_metrics.shape != new_val_metrics.shape:
-                val_metrics = np.zeros(new_val_metrics.shape)
-            val_metrics += new_val_metrics
-
-        val_metrics = val_metrics / float(i_batch + 1)
-
-        self.logger.info("Validation metrics:")
-        self.print_metrics(val_metrics)
-        self.logger.debug("Ending validation")
 
     def await_signal_from_parent(self):
         """Wait for 'train' signal from parent process"""
@@ -577,7 +577,7 @@ class MPIMaster(MPIProcess):
 
     def __init__(self, parent_comm, parent_rank=None, child_comm=None,
                  num_epochs=1, data=None, algo=None, model=None,
-                 num_sync_workers=1, verbose=False, monitor=False):
+                 num_sync_workers=1, verbose=False, monitor=False, save_filename=None,):
         """Parameters:
               child_comm: MPI communicator used to contact children"""
         if child_comm is None:
@@ -586,10 +586,14 @@ class MPIMaster(MPIProcess):
         self.has_parent = False
         if parent_rank is not None:
             self.has_parent = True
-        self.best_val_loss = None
-        self.inputLayerConnections = []
+        self.best_val_loss = 0.
+        self.best_val_acc = 0.
+        self.weights_to_save = []
+        self.biases_to_save = []
 
         self.num_workers = child_comm.Get_size() - 1  # all processes but one are workers
+        self.metrics = np.zeros((num_epochs // self.num_workers, 6))
+
         self.num_sync_workers = num_sync_workers
         info = ("Creating MPIMaster with rank {0} and parent rank {1}. "
                 "(Communicator size {2}, Child communicator size {3})")
@@ -599,7 +603,7 @@ class MPIMaster(MPIProcess):
             logging.info("Will wait for updates from {0:d} workers before synchronizing".format(self.num_sync_workers))
 
         super(MPIMaster, self).__init__(parent_comm, process_comm=None, parent_rank=parent_rank, data=data,
-                                        algo=algo, model=model, num_epochs=num_epochs,
+                                        algo=algo, model=model, num_epochs=num_epochs, save_filename=save_filename,
                                         verbose=verbose, monitor=monitor)
 
     def decide_whether_to_sync(self):
@@ -655,13 +659,17 @@ class MPIMaster(MPIProcess):
 
                     if self.algo.validate_every > 0 and self.time_step > 0:
                         if self.time_step % self.algo.validate_every == 0:
+                            self.weights_to_save.append(self.weights['w'])
+                            self.biases_to_save.append(self.weights['b'])
+
+                            self.validate(self.weights)
                             if self.epoch < self.num_epochs//self.num_workers:
-                                self.validate(self.weights)
                                 t5 = datetime.datetime.now()
                                 self.model.weight_evolution()
                                 t6 = datetime.datetime.now()
                                 self.logger.info(f"Weights evolution time  {t6 - t5}")
                                 self.weights = self.model.get_weights()
+
                             self.logger.info(f"Master epoch {self.epoch}")
 
                     self.sync_parent()
@@ -750,11 +758,15 @@ class MPIMaster(MPIProcess):
             if self.stop_training:
                 self.shut_down_workers()
 
+        np.savez_compressed(self.save_filename + "_weights.npz", *self.weights_to_save)
+        np.savez_compressed(self.save_filename + "_biases.npz", *self.biases_to_save)
+
         self.logger.info("Done training")
         # If we did not finish the last epoch, validate one more time.
         # (this happens if the batch size does not divide the dataset size)
         if self.epoch < self.num_epochs or not self.histories.get(self.history_key(), None):
-            epoch_logs = self.validate(self.weights)
+            self.epoch += 1
+            self.validate(self.weights)
 
         self.send_exit_to_parent()
         self.send_history_to_parent()
@@ -798,19 +810,31 @@ class MPIMaster(MPIProcess):
         model.set_weights(weights)
 
         self.logger.debug("Starting validation")
-        val_metrics = np.zeros((1,))
-        i_batch = 0
-        for i_batch, batch in enumerate(self.data.generate_validation_data()):
-            new_val_metrics = model.test_on_batch(x=batch[0], y=batch[1])
-
-            if val_metrics.shape != new_val_metrics.shape:
-                val_metrics = np.zeros(new_val_metrics.shape)
-            val_metrics += new_val_metrics
-
-        val_metrics = val_metrics / float(i_batch + 1)
+        t3 = datetime.datetime.now()
+        accuracy_test, activations_test = self.model.predict(self.data.x_test, self.data.y_test)
+        accuracy_val, activations_val = self.model.predict(self.data.x_val, self.data.y_val)
+        accuracy_train, activations_train = self.model.predict(self.data.x_train, self.data.y_train)
+        t4 = datetime.datetime.now()
+        self.best_val_acc = max(self.best_val_acc , accuracy_val)
+        loss_test = self.model.compute_loss(self.data.y_test, activations_test)
+        loss_val = self.model.compute_loss(self.data.y_val, activations_val)
+        loss_train = self.model.compute_loss(self.data.y_train, activations_train)
+        self.metrics[self.epoch-1, 0] = loss_train
+        self.metrics[self.epoch-1, 1] = loss_val
+        self.metrics[self.epoch-1, 2] = loss_test
+        self.metrics[self.epoch-1, 3] = accuracy_train
+        self.metrics[self.epoch-1, 4] = accuracy_val
+        self.metrics[self.epoch-1, 5] = accuracy_test
 
         self.logger.info("Validation metrics:")
-        self.print_metrics(val_metrics)
+        self.logger.info(f"Testing time: {t4 - t3}\n; Loss val: {loss_val}; Loss test: {loss_test}; \n"
+                          f"Accuracy val: {accuracy_val}; Accuracy test: {accuracy_test}; \n"
+                          f"Maximum accuracy val: {self.best_val_acc}")
+
+        # save performance metrics values in a file
+        if (self.save_filename != ""):
+            np.savetxt(self.save_filename + ".txt", self.metrics)
+
         self.logger.debug("Ending validation")
         return None
 

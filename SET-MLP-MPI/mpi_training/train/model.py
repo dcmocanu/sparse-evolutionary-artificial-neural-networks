@@ -42,14 +42,17 @@ class MPIModel(object):
     def train_on_batch(self, **args):
         return self.model.train_on_batch(**args)
 
+    def compute_loss(self, y, y_hat):
+        return self.model.loss.loss(y, y_hat)
+
     def test_on_batch(self, **args):
         return np.asarray(self.model.test_on_batch(**args))
 
     def predict(self, x, y):
         return self.model.predict(x, y, self.model.batch_size)
 
-    def compute_loss(self, y, activations):
-        return self.model.loss.loss(y, activations)
-
     def weight_evolution(self):
-        self.model.weightsEvolution_II()
+        return self.model.weightsEvolution_II()
+
+    def getCoreInputConnections(self):
+        return self.model.getCoreInputConnections()

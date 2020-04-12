@@ -18,16 +18,16 @@ for i in range(1):
     data = np.load("../Tutorial-IJCAI-2019-Scalable-Deep-Learning/data/fashion_mnist.npz")
     connections=np.load("Pretrained_results/set_mlp_2000_training_samples_e13_rand"+str(i)+"_input_connections.npz")["inputLayerConnections"]
 
-    allConnections=np.zeros((28,28,len(connections)))
+    allConnections=np.zeros((32,32,len(connections)))
     for j in range(len(connections)):
-        connectionsEpoch=np.reshape(connections[j],(28,28))
+        connectionsEpoch=np.reshape(connections[j],(32,32))
         allConnections[:,:,j]=connectionsEpoch
 
     fig = plt.figure()
-    fig.suptitle('ECMLPKDD 2019 tutorials\nScalable Deep Learning: from theory to practice', fontsize=14)
+    fig.suptitle('Scalable Deep Learning: from theory to practice', fontsize=14)
 
     ax1 = fig.add_subplot(121)
-    ax1.imshow(np.reshape(data["X_train"][1,:],(28,28)),vmin=0,vmax=255,cmap="gray_r",interpolation=None)
+    ax1.imshow(np.reshape(data["X_train"][1,:],(32,32)),vmin=0,vmax=255,cmap="gray_r",interpolation=None)
     ax1.set_title("Fashion-MNIST example")
 
     ax2 = fig.add_subplot(122)

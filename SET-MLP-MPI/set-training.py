@@ -20,7 +20,7 @@ parser.add_argument('--lr', type=float, default=0.05, metavar='LR',
 parser.add_argument('--lr-rate-decay', type=float, default=0.0, metavar='LRD',
                     help='learning rate decay (default: 0)')
 parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
-                    help='SGD momentum (default: 0.5)')
+                    help='SGD momentum (default: 0.9)')
 parser.add_argument('--dropout-rate', type=float, default=0.3, metavar='D',
                     help='Dropout rate')
 parser.add_argument('--weight-decay', type=float, default=0.0002, metavar='W',

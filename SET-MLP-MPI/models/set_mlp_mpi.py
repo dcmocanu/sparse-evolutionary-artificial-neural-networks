@@ -194,10 +194,7 @@ class SET_MLP:
         activations = (          Relu,  Relu,  Relu,  Sigmoid)
         """
         self.n_layers = len(dimensions)
-        self.learning_rate = config['lr']
-        self.momentum = config['momentum']
-        self.epochs = config['n_epochs']
-        self.weight_decay = config['weight_decay']
+
         self.epsilon = config['epsilon']  # control the sparsity level as discussed in the paper
         self.zeta = config['zeta']  # the fraction of the weights removed
         self.dropout_rate = config['dropout_rate']  # dropout rate
@@ -217,21 +214,6 @@ class SET_MLP:
             self.w[i + 1] = createSparseWeights(self.epsilon, dimensions[i], dimensions[i + 1]) #create sparse weight matrices
             self.b[i + 1] = np.zeros(dimensions[i + 1])
             self.activations[i + 2] = activations[i]
-
-        # with  ProcessPoolExecutor() as executor:
-        #     # Activations are also initiated by index. For the example we will have activations[2] and activations[3]
-        #     self.activations = {}
-        #     noRows = dimensions[:-1]
-        #     noCols = dimensions[1:]
-        #
-        #     # create sparse weight matrices
-        #
-        #     results = executor.map(createSparseWeights, [epsilon] * len(noCols), noRows, noCols)
-        #     for i, res in enumerate(results):
-        #         self.w[i + 1] = res
-        #         self.b[i + 1] = np.zeros(dimensions[i + 1])
-        #         self.activations[i + 2] = activations[i]
-        # t2 = datetime.datetime.now()
 
         # print("Creation sparse weights time: ", t2 - t1)
         if config['loss'] == 'mse':
@@ -336,9 +318,7 @@ class SET_MLP:
 
     def train_on_batch(self, x, y):
         z, a = self._feed_forward(x, True)
-        update = self._back_prop(z, a, y)
-        accuracy, activations = self.predict(x, y)
-        return self.loss.loss(y, activations), accuracy, update
+        return self._back_prop(z, a, y)
 
     def test_on_batch(self, x, y):
         accuracy, activations = self.predict(x, y)
@@ -407,6 +387,7 @@ class SET_MLP:
     def weightsEvolution_II(self):
         # this represents the core of the SET procedure. It removes the weights closest to zero in each layer and add new random weights
         #evolve all layers, except the one from the last hidden layer to the output layer
+        inputLayerConnections = []
         for i in range(1, self.n_layers):
             # uncomment line below to stop evolution of dense weights more than 80% non-zeros
             #if(self.w[i].count_nonzero()/(self.w[i].get_shape()[0]*self.w[i].get_shape()[1]) < 0.8):
@@ -447,11 +428,9 @@ class SET_MLP:
                 self.pdw[i] = coo_matrix((valsPDNew, (rowsPDNew, colsPDNew)),
                                          (self.dimensions[i - 1], self.dimensions[i])).tocsr()
 
-                # if(i==1):
-                #     self.inputLayerConnections.append(coo_matrix((valsWNew, (rowsWNew, colsWNew)),
-                #                        (self.dimensions[i - 1], self.dimensions[i])).getnnz(axis=1))
-                #     np.savez_compressed(self.save_filename + "_input_connections.npz",
-                #                         inputLayerConnections=self.inputLayerConnections)
+                if(i==1):
+                    inputLayerConnections.append(coo_matrix((valsWNew, (rowsWNew, colsWNew)),
+                                       (self.dimensions[i - 1], self.dimensions[i])).getnnz(axis=1))
 
                 # add new random connections
                 keepConnections = np.size(rowsWNew)
@@ -490,6 +469,7 @@ class SET_MLP:
 
                 # t_ev_2 = datetime.datetime.now()
                 # print("Weights evolution time for layer",i,"is", t_ev_2 - t_ev_1)
+        return inputLayerConnections
 
     def predict(self, x_test, y_test, batch_size=1):
         """
@@ -511,4 +491,3 @@ class SET_MLP:
                 correct_classification += 1
         accuracy = correct_classification / y_test.shape[0]
         return accuracy, activations
-

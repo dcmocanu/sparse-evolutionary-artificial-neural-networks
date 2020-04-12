@@ -1,7 +1,7 @@
 ### Algo class
 
 import numpy as np
-from .optimizer import get_optimizer, OptimizerBuilder
+from .optimizer import get_optimizer
 
 
 class Algo(object):
@@ -22,13 +22,13 @@ class Algo(object):
                       'validate_every': 1000,
                       'sync_every': 1,
                       'mode': 'sgdm',
-                      'worker_optimizer': 'sgd',
-                      'worker_optimizer_params': '{}',
+                      'optimizer_params': '{}',
                       'elastic_force': None,
                       'elastic_lr': 1.0,
                       'elastic_momentum': 0,
-                      'lr': 0.5
-                      }
+                      'lr': 0.05,
+                      'weight_decay': 0.0002
+    }
 
     def __init__(self, optimizer, **kwargs):
         """optimizer: string naming an optimization algorithm as defined in Optimizer.get_optimizer()
@@ -38,10 +38,6 @@ class Algo(object):
                validate_every: number of time steps to wait between validations
                sync_every: number of time steps to wait before getting weights from parent
                mode: 'sgd', 'easgd' or 'gem' are supported
-               worker_optimizer: string indicating which optimizer the worker should use.
-                    (note that if worker_optimizer is sgd and worker_lr is 1, the worker's
-                     updates will be the gradients computed at each time step, which is
-                     what is needed for many algorithms.)
                elastic_force: alpha constant in the Elastic Averaging SGD algorithm
                elastic_lr: EASGD learning rate for worker
                elastic_momentum: EASGD momentum for worker
@@ -61,11 +57,9 @@ class Algo(object):
         else:
             self.optimizer = None
 
-        """Workers are only responsible for computing the gradient and 
+        """ Workers are only responsible for computing the gradient and 
             sending it to the master, so we use ordinary SGD with learning rate 1 and 
             compute the gradient as (old weights - new weights) after each batch."""
-        self.worker_optimizer_builder = OptimizerBuilder(self.worker_optimizer,
-                                                         self.worker_optimizer_params)
 
         self.step_counter = 0
         if self.mode == 'gem':

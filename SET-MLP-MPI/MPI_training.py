@@ -49,11 +49,6 @@ if __name__ == '__main__':
     # Configuration of training process
     parser.add_argument('--optimizer', help='optimizer for master to use', default='sgd')
     parser.add_argument('--loss', help='loss function', default='mse')
-    parser.add_argument('--worker-optimizer', help='optimizer for workers to use',
-                        dest='worker_optimizer', default='sgd')
-    parser.add_argument('--worker-optimizer-params',
-                        help='worker optimizer parameters',
-                        dest='worker_optimizer_params', default={})
     parser.add_argument('--sync-every', help='how often to sync weights with master',
                         default=1, type=int, dest='sync_every')
     parser.add_argument('--mode', help='Mode of operation.'
@@ -78,7 +73,7 @@ if __name__ == '__main__':
 
     # Model configuration
     parser.add_argument('--batch-size', type=int, default=128, help='input batch size for training (default: 64)')
-    parser.add_argument('--epochs', type=int, default=1,  help='number of epochs to train (default: 10)')
+    parser.add_argument('--epochs', type=int, default=100,  help='number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=0.05, help='learning rate (default: 0.01)')
     parser.add_argument('--lr-rate-decay', type=float, default=0.0, help='learning rate decay (default: 0)')
     parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum (default: 0.5)')
@@ -92,39 +87,35 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=1, help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=10,
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--n-training-samples', type=int, default=10000, help='Number of training samples')
-    parser.add_argument('--n-testing-samples', type=int, default=1000, help='Number of testing samples')
+    parser.add_argument('--n-training-samples', type=int, default=40000, help='Number of training samples')
+    parser.add_argument('--n-testing-samples', type=int, default=10000, help='Number of testing samples')
 
     args = parser.parse_args()
 
     # Initialize logger
-    initialize_logger(filename="mpi_logger.txt", file_level=args.log_level, stream_level=args.log_level)
+    initialize_logger(filename=args.log_file, file_level=args.log_level, stream_level=args.log_level)
 
     # SET parameters
     model_config = {
-        'n_processes': args.processes,
-        'n_epochs': args.epsilon,
         'batch_size': args.batch_size,
         'dropout_rate': args.dropout_rate,
-        'seed': 1,
-        'lr': args.lr,
-        'lr_decay': args.lr_rate_decay,
+        'seed': 0,
         'zeta': args.zeta,
         'epsilon': args.epsilon,
-        'momentum': args.momentum,
-        'weight_decay': args.weight_decay,
-        'n_hidden_neurons': args.n_neurons,
-        'n_training_samples': args.n_training_samples,
-        'n_testing_samples': args.n_testing_samples,
         'loss': args.loss
     }
+
+    # Comment this if you would like to use the full power of randomization. I use it to have repeatable results.
+    np.random.seed(1)
 
     comm = MPI.COMM_WORLD.Dup()
 
     model_weights = None
     rank = comm.Get_rank()
+    num_processes = comm.Get_size()
+    num_workers = num_processes - 1
 
-    if comm.Get_size() == 1:
+    if num_processes == 1:
         # Load dataset
         X_train, Y_train, X_test, Y_test, X_val, Y_val = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
         data = Data(batch_size=args.batch_size,
@@ -134,7 +125,7 @@ if __name__ == '__main__':
     else:
         if rank != 0:
             # Load augmented dataset
-            # partitions = shared_partitions(args.n_training_samples, comm.Get_size() - 1, args.batch_size)
+            # partitions = shared_partitions(args.n_training_samples, num_workers, args.batch_size)
             #
             # X_train, Y_train, X_test, Y_test = load_cifar10_500K_data()
             # data = Data(batch_size=args.batch_size, x_train=X_train[partitions[rank - 1]],
@@ -142,7 +133,7 @@ if __name__ == '__main__':
             #             x_test=X_test, y_test=Y_test)
 
             # Load normal dataset
-            partitions = shared_partitions(args.n_training_samples, comm.Get_size() - 1, args.batch_size)
+            partitions = shared_partitions(args.n_training_samples, num_workers, args.batch_size)
             X_train, Y_train, X_test, Y_test, X_val, Y_val = load_cifar10_data(args.n_training_samples,
                                                                                args.n_testing_samples)
             data = Data(batch_size=args.batch_size,
@@ -155,37 +146,30 @@ if __name__ == '__main__':
             # X_test = np.load('mpi_training/cifar10/x_test.npy', mmap_mode='r')
             # Y_test = np.load('mpi_training/cifar10/y_test.npy', mmap_mode='r')
 
-            _, _,  X_test, Y_test, X_val, Y_val = load_cifar10_data(args.n_training_samples,
+            X_train, Y_train,  X_test, Y_test, X_val, Y_val = load_cifar10_data(args.n_training_samples,
                                                                     args.n_testing_samples)
             data = Data(batch_size=args.batch_size,
-                        x_train=None, y_train=None,
+                        x_train=X_train, y_train=Y_train,
                         x_test=X_test, y_test=Y_test,
                         x_val=X_val, y_val=Y_val)
             del X_test, Y_test, X_val, Y_val
 
-    validate_every = int((args.n_training_samples // args.batch_size) * (comm.Get_size() - 1))
+    validate_every = int((args.n_training_samples // args.batch_size) * num_workers)
 
     # Some input arguments may be ignored depending on chosen algorithm
     if args.mode == 'easgd':
         algo = Algo(None, loss=args.loss, validate_every=validate_every,
                     mode='easgd', sync_every=args.sync_every,
-                    worker_optimizer=args.worker_optimizer,
-                    worker_optimizer_params=args.worker_optimizer_params,
-                    elastic_force=args.elastic_force / (comm.Get_size() - 1),
+                    elastic_force=args.elastic_force / (num_workers),
                     elastic_lr=args.elastic_lr,
                     elastic_momentum=args.elastic_momentum)
     elif args.mode == 'gem':
         algo = Algo('gem', loss=args.loss, validate_every=validate_every,
                     mode='gem', sync_every=args.sync_every,
-                    worker_optimizer=args.worker_optimizer,
-                    worker_optimizer_params=args.worker_optimizer_params,
                     learning_rate=args.gem_lr, momentum=args.gem_momentum, kappa=args.gem_kappa)
     else:
-        algo = Algo(optimizer='sgdm', loss=args.loss, validate_every=validate_every,
-                    sync_every=args.sync_every,
-                    worker_optimizer=args.worker_optimizer,
-                    worker_optimizer_params=args.worker_optimizer_params,
-                    )
+        algo = Algo(optimizer='sgdm', loss=args.loss, validate_every=validate_every, lr=args.lr,
+                    sync_every=args.sync_every, weight_decay=args.weight_decay, momentum=args.gem_momentum)
 
     # Model architecture cifar10
     dimensions = (3072, 4000, 1000, 4000, 10)
@@ -198,11 +182,14 @@ if __name__ == '__main__':
 
     model = MPIModel(model=SET_MLP(dimensions, (Relu, Relu, Relu, Sigmoid), **model_config))
 
+    save_filename = "Results/set_mlp_" + str(args.n_training_samples) + "_training_samples_e" + \
+                    str(args.epsilon) + "_rand" + str(1) + "_process_" + str(rank) + "_num_workers_" + str(num_workers)
+
     # Creating the MPIManager object causes all needed worker and master nodes to be created
     manager = MPIManager(comm=comm, data=data, algo=algo, model=model,
-                         num_epochs=args.epochs, num_masters=args.masters,
+                         num_epochs=args.epochs*num_workers, num_masters=args.masters,
                          num_processes=args.processes, synchronous=args.synchronous,
-                         verbose=args.verbose, monitor=args.monitor)
+                         verbose=args.verbose, monitor=args.monitor, save_filename=save_filename)
 
     # Process 0 launches the training procedure
     if rank == 0:

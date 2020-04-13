@@ -557,7 +557,7 @@ class MPIMaster(MPIProcess):
         self.biases_to_save = []
 
         self.num_workers = child_comm.Get_size() - 1  # all processes but one are workers
-        self.metrics = np.zeros((num_epochs // self.num_workers, 6))
+        self.metrics = np.zeros((num_epochs // self.num_workers + 1, 6))
 
         self.num_sync_workers = num_sync_workers
         info = ("Creating MPIMaster with rank {0} and parent rank {1}. "
@@ -740,6 +740,10 @@ class MPIMaster(MPIProcess):
         if self.epoch < self.num_epochs:
             self.epoch += 1
             self.validate(self.weights)
+
+        if (self.save_filename != ""):
+            with open(self.save_filename + "_monitor.json", 'a') as file:
+                file.write(json.dumps(self.monitor.get_stats(), indent=4, sort_keys=True, default=str))
 
         self.send_exit_to_parent()
         self.stop_time = time.time()

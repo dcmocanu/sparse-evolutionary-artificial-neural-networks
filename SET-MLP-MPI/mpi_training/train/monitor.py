@@ -4,7 +4,6 @@ import os
 from datetime import datetime
 from threading import Thread
 import psutil
-import numpy as np
 import time
 
 
@@ -20,8 +19,10 @@ class Monitor(object):
         self.accounting_enabled = False
         self.save_filename = save_filename
 
+        self.samples = []
+
     def _monitor(self):
-        current_sample = []
+
         while not self.should_stop:
 
             cpu_process = psutil.Process(self.pid)
@@ -67,15 +68,14 @@ class Monitor(object):
             # get the status of the process (running, idle, etc.)
             status = cpu_process.status()
 
-            current_sample.append({
+            current_sample = {
                 'pid': self.pid, 'name': name, 'create_time': create_time,
                 'cores': cores, 'cpu_usage': cpu_usage, 'status': status, 'nice': nice,
                 'memory_usage': memory_usage, 'read_bytes': read_bytes, 'write_bytes': write_bytes,
                 'n_threads': n_threads
-            })
+            }
 
-            if (self.save_filename != ""):
-                np.savetxt(self.save_filename + "_monitor.txt", current_sample)
+            self.samples.append(current_sample)
 
             time.sleep(self.sampling_rate)
 
@@ -87,3 +87,6 @@ class Monitor(object):
     def stop_monitor(self):
         self.should_stop = True
         self.thread.join()
+
+    def get_stats(self):
+        return self.samples

@@ -1,6 +1,5 @@
 import argparse
 import logging
-import psutil
 from models.set_mlp_mpi import *
 from utils.load_data import *
 
@@ -73,11 +72,11 @@ if __name__ == '__main__':
 
     # Model configuration
     parser.add_argument('--batch-size', type=int, default=128, help='input batch size for training (default: 64)')
-    parser.add_argument('--epochs', type=int, default=100,  help='number of epochs to train (default: 10)')
-    parser.add_argument('--lr', type=float, default=0.05, help='learning rate (default: 0.01)')
+    parser.add_argument('--epochs', type=int, default=25,  help='number of epochs to train (default: 10)')
+    parser.add_argument('--lr', type=float, default=0.1, help='learning rate (default: 0.01)')
     parser.add_argument('--lr-rate-decay', type=float, default=0.0, help='learning rate decay (default: 0)')
     parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum (default: 0.5)')
-    parser.add_argument('--dropout-rate', type=float, default=0.3, help='Dropout rate')
+    parser.add_argument('--dropout-rate', type=float, default=0.2, help='Dropout rate')
     parser.add_argument('--weight-decay', type=float, default=0.0002, help='Dropout rate')
     parser.add_argument('--epsilon', type=int, default=20, help='Sparsity level')
     parser.add_argument('--zeta', type=float, default=0.3,
@@ -87,13 +86,15 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=1, help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=10,
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--n-training-samples', type=int, default=40000, help='Number of training samples')
-    parser.add_argument('--n-testing-samples', type=int, default=10000, help='Number of testing samples')
+    parser.add_argument('--n-training-samples', type=int, default=5000, help='Number of training samples')
+    parser.add_argument('--n-testing-samples', type=int, default=1000, help='Number of testing samples')
 
     args = parser.parse_args()
 
     # Initialize logger
-    initialize_logger(filename=args.log_file, file_level=args.log_level, stream_level=args.log_level)
+    log_file = "Results/set_mlp_" + str(args.n_training_samples) + "_training_samples_e" + \
+                    str(args.epsilon) + "_rand" + str(1) + "_logs"
+    initialize_logger(filename=log_file, file_level=args.log_level, stream_level=args.log_level)
 
     # SET parameters
     model_config = {

@@ -2,6 +2,7 @@ import numpy as np
 import logging
 from mpi_training.mpi.process import MPIWorker, MPIMaster
 import datetime
+import json
 
 class MPISingleWorker(MPIWorker):
     """This class trains its model with no communication to other processes"""
@@ -71,8 +72,9 @@ class MPISingleWorker(MPIWorker):
         np.savez_compressed(self.save_filename + "_weights.npz", *weights)
         np.savez_compressed(self.save_filename + "_biases.npz", *biases)
 
-        if self.monitor:
-            self.update_monitor(self.monitor.get_stats())
+        if (self.save_filename != ""):
+            with open(self.save_filename + "_monitor.json", 'a') as file:
+                file.write(json.dumps(self.monitor.get_stats(), indent=4, sort_keys=True, default=str))
 
     def test(self, weights):
         return MPIMaster.test_aux(self, weights, self.model)

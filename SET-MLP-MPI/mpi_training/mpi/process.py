@@ -57,6 +57,7 @@ class MPIProcess(object):
         self.model = model
         self.verbose = verbose
         self.save_filename = save_filename
+        self.idle_time = 0.0
 
         self.inputLayerConnections =[]
 
@@ -149,13 +150,15 @@ class MPIProcess(object):
         if self.is_shadow():
             return
 
-        t1 = datetime.datetime.now()
         self.send_update(check_permission=True)
+        t1 = datetime.datetime.now()
         self.time_step = self.recv_time_step()
         self.weights = self.recv_weights()
-        self.algo.set_worker_model_weights(self.model, self.weights)
         t2 = datetime.datetime.now()
-        self.logger.info(f"Worker idle time: {t2 - t1}")
+        self.idle_time += (t2 - t1).total_seconds()
+
+        self.algo.set_worker_model_weights(self.model, self.weights)
+
 
     def apply_update(self):
         """Updates weights according to update received from worker process"""
@@ -230,7 +233,6 @@ class MPIProcess(object):
                 comm.Recv(obj, source=source, tag=tag_num, status=status)
             return obj
         else:
-            #if tag == 'update' and obj: self.logger.info(f'{obj["b"]}')
             obj = comm.recv(source=source, tag=tag_num, status=status)
             return obj
 
@@ -305,7 +307,6 @@ class MPIProcess(object):
             decision = self.recv_bool(comm=comm, source=dest)
             if not decision:
                 return
-        #if self.rank!=0:self.logger.info(f'{obj}')
         self.send(obj, tag, comm=comm, dest=dest, buffer=False)
 
     def send_weights(self, comm=None, dest=None, check_permission=False):
@@ -331,40 +332,39 @@ class MPIProcess(object):
         if self.is_shadow(): return
         self.send(obj=obj, tag='bool', dest=dest, comm=comm)
 
-    def recv_arrays(self, obj, tag, comm=None, source=None, add_to_existing=False):
+    def recv_arrays(self, obj, tag, comm=None, source=None):
         """Receive a list of numpy arrays from the process specified by comm (MPI communicator)
             and dest (rank).
               obj: list of destination arrays
-              tag: MPI tag accompanying the message
-              add_to_existing: if true, add to existing object instead of replacing"""
-        if add_to_existing:
-
-            # TODO this needs some work
-            tmp = self.model.format_update()
-            tmp = self.recv_arrays(tmp, tag=tag, comm=comm, source=source)
-            if obj:
-                for (id1, b), (id2, pdd) in zip(obj['b'].items(), tmp['b'].items()):
-                    obj['b'][id1] = b + pdd
-                for (id1, w), (id2, pdw) in zip(obj['w'].items(), tmp['w'].items()):
-                    obj['w'][id1] = w + pdw
-            else:
-                obj = tmp
-            return obj
+              tag: MPI tag accompanying the message"""
         return self.recv(obj, tag, comm=comm, source=source, buffer=False)
 
     def recv_weights(self, comm=None, source=None, add_to_existing=False):
         """Receive NN weights layer by layer from the process specified by comm and source"""
         if self.is_shadow(): return
-        return self.recv_arrays(self.weights, tag='weights', comm=comm, source=source,
-                         add_to_existing=add_to_existing)
+        return self.recv_arrays(self.weights, tag='weights', comm=comm, source=source)
 
     def recv_update(self, comm=None, source=None, add_to_existing=False):
         """Receive an update layer by layer from the process specified by comm and source.
             Add it to the current update if add_to_existing is True,
             otherwise overwrite the current update"""
         if self.is_shadow(): return
-        self.update = self.recv_arrays(self.update, tag='update', comm=comm, source=source,
-                         add_to_existing=add_to_existing)
+        if add_to_existing:
+            tmp = {}
+            tmp = self.recv_arrays(tmp, tag='update', comm=comm, source=source)
+
+            for index, v in tmp.items():
+                dw = v[0]
+                delta = v[1]
+
+                # perform the update with momentum
+                if index not in self.update:
+                    self.update[index] = (dw,np.mean(delta, 0))
+                else:
+                    self.update[index] = (self.update[index][0] + dw, self.update[index][1] + np.mean(delta, 0))
+
+        else:
+            self.update = self.recv_arrays(self.update, tag='update', comm=comm, source=source)
 
     def recv_time_step(self, comm=None, source=None):
         """Receive the current time step"""
@@ -509,6 +509,7 @@ class MPIWorker(MPIProcess):
                 break
 
         self.logger.debug("Signing off")
+        self.logger.info(f"Worker idle time: {self.idle_time}")
 
         self.send_exit_to_parent()
 
@@ -610,9 +611,12 @@ class MPIMaster(MPIProcess):
         accepted = self.accept_update()
         self.send_bool(accepted, dest=source, comm=self.child_comm)
         if accepted:
+            t1 = datetime.datetime.now()
             self.recv_update(source=source, comm=self.child_comm,
                              add_to_existing=self.is_synchronous())
             self.waiting_workers_list.append(source)
+            t2 = datetime.datetime.now()
+            self.idle_time += (t2 - t1).total_seconds()
 
             if self.decide_whether_to_sync():
                 if self.algo.send_before_apply:
@@ -621,6 +625,8 @@ class MPIMaster(MPIProcess):
                     self.apply_update()
                 else:
                     self.apply_update()
+                    if self.is_synchronous():
+                        self.update = {}
 
                     if self.algo.validate_every > 0 and self.time_step > 0:
                         if self.time_step % self.algo.validate_every == 0:
@@ -722,7 +728,7 @@ class MPIMaster(MPIProcess):
             t1 = datetime.datetime.now()
             self.recv_any_from_child(status)
             t2 = datetime.datetime.now()
-            self.logger.info(f"Master idle time: {t2 - t1}")
+            self.idle_time += (t2 - t1).total_seconds()
             self.process_message(status)
 
             if self.stop_training:
@@ -735,14 +741,15 @@ class MPIMaster(MPIProcess):
         np.savez_compressed(self.save_filename + "_biases.npz", *self.biases_to_save)
 
         self.logger.info("Done training")
+        self.logger.info(f"Master idle time: {self.idle_time}")
         # If we did not finish the last epoch, validate one more time.
         # (this happens if the batch size does not divide the dataset size)
         if self.epoch < self.num_epochs:
             self.epoch += 1
             self.validate(self.weights)
 
-        if (self.save_filename != ""):
-            with open(self.save_filename + "_monitor.json", 'a') as file:
+        if (self.monitor and self.save_filename != ""):
+            with open(self.save_filename + "_monitor.json", 'w') as file:
                 file.write(json.dumps(self.monitor.get_stats(), indent=4, sort_keys=True, default=str))
 
         self.send_exit_to_parent()

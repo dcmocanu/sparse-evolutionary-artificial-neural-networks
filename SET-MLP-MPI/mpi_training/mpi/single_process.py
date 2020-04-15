@@ -73,7 +73,7 @@ class MPISingleWorker(MPIWorker):
         np.savez_compressed(self.save_filename + "_biases.npz", *biases)
 
         if (self.save_filename != ""):
-            with open(self.save_filename + "_monitor.json", 'a') as file:
+            with open(self.save_filename + "_monitor.json", 'w') as file:
                 file.write(json.dumps(self.monitor.get_stats(), indent=4, sort_keys=True, default=str))
 
     def test(self, weights):

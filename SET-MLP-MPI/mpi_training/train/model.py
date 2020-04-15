@@ -30,8 +30,7 @@ class MPIModel(object):
                     logging.info("{0}: {1:.3f}".format(name, metric))
 
     def format_update(self):
-        if not self.model.parameters()['pdw']:
-            return {'pdw': {}, 'pdd': {}}
+        return {}
 
     def get_weights(self):
         return self.model.parameters()

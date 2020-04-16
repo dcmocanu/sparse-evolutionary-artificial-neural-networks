@@ -471,6 +471,80 @@ class SET_MLP:
                 # print("Weights evolution time for layer",i,"is", t_ev_2 - t_ev_1)
         return inputLayerConnections
 
+    def weightsEvolution_III(self):
+        # this represents the core of the SET procedure. It removes the weights closest to zero in each layer and add new random weights
+        #evolve all layers, except the one from the last hidden layer to the output layer
+        inputLayerConnections = []
+        for i in range(1, self.n_layers):
+            # uncomment line below to stop evolution of dense weights more than 80% non-zeros
+            #if(self.w[i].count_nonzero()/(self.w[i].get_shape()[0]*self.w[i].get_shape()[1]) < 0.8):
+                t_ev_1 = datetime.datetime.now()
+                # converting to COO form
+                wcoo = self.w[i].tocoo()
+                valsW = wcoo.data
+                rowsW = wcoo.row
+                colsW = wcoo.col
+
+                # print("Number of non zeros in W and PD matrix before evolution in layer",i,[np.size(valsW), np.size(valsPD)])
+                values = np.sort(self.w[i].data)
+                firstZeroPos = find_first_pos(values, 0)
+                lastZeroPos = find_last_pos(values, 0)
+
+                largestNegative = values[int((1 - self.zeta) * firstZeroPos)]
+                smallestPositive = values[
+                    int(min(values.shape[0] - 1, lastZeroPos + self.zeta * (values.shape[0] - lastZeroPos)))]
+
+                # remove the weights (W) closest to zero and modify PD as well
+                valsWNew = valsW[(valsW > smallestPositive) | (valsW < largestNegative)]
+                rowsWNew = rowsW[(valsW > smallestPositive) | (valsW < largestNegative)]
+                colsWNew = colsW[(valsW > smallestPositive) | (valsW < largestNegative)]
+
+                newWRowColIndex = np.stack((rowsWNew, colsWNew), axis=-1)
+
+
+                if(i==1):
+                    inputLayerConnections.append(coo_matrix((valsWNew, (rowsWNew, colsWNew)),
+                                       (self.dimensions[i - 1], self.dimensions[i])).getnnz(axis=1))
+
+                # add new random connections
+                keepConnections = np.size(rowsWNew)
+                lengthRandom = valsW.shape[0] - keepConnections
+                randomVals = np.random.randn(lengthRandom) / 10
+                zeroVals = 0 * randomVals  # explicit zeros
+
+                # adding  (wdok[ik,jk]!=0): condition
+                while (lengthRandom > 0):
+                    ik = np.random.randint(0, self.dimensions[i - 1], size=lengthRandom, dtype='int32')
+                    jk = np.random.randint(0, self.dimensions[i], size=lengthRandom, dtype='int32')
+
+                    randomWRowColIndex = np.stack((ik, jk), axis=-1)
+                    randomWRowColIndex = np.unique(randomWRowColIndex, axis=0)  # removing duplicates in new rows&cols
+                    oldWRowColIndex = np.stack((rowsWNew, colsWNew), axis=-1)
+
+                    uniqueFlag = ~array_intersect(randomWRowColIndex, oldWRowColIndex)  # careful about order & tilda
+
+                    ikNew = randomWRowColIndex[uniqueFlag][:, 0]
+                    jkNew = randomWRowColIndex[uniqueFlag][:, 1]
+                    # be careful - row size and col size needs to be verified
+                    rowsWNew = np.append(rowsWNew, ikNew)
+                    colsWNew = np.append(colsWNew, jkNew)
+
+                    lengthRandom = valsW.shape[0] - np.size(rowsWNew)  # this will constantly reduce lengthRandom
+
+                # adding all the values along with corresponding row and column indices
+                valsWNew = np.append(valsWNew, randomVals)
+                # valsPDNew=np.append(valsPDNew, zeroVals)
+                if (valsWNew.shape[0] != rowsWNew.shape[0]):
+                    print("not good")
+                self.w[i] = coo_matrix((valsWNew, (rowsWNew, colsWNew)),
+                                       (self.dimensions[i - 1], self.dimensions[i])).tocsr()
+
+                # print("Number of non zeros in W and PD matrix after evolution in layer",i,[(self.w[i].data.shape[0]), (self.pdw[i].data.shape[0])])
+
+                # t_ev_2 = datetime.datetime.now()
+                # print("Weights evolution time for layer",i,"is", t_ev_2 - t_ev_1)
+        return inputLayerConnections
+
     def predict(self, x_test, y_test, batch_size=1):
         """
         :param x_test: (array) Test input

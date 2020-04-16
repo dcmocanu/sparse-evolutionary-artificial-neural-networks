@@ -1,7 +1,7 @@
 ### Algo class
 
 import numpy as np
-from .optimizer import get_optimizer
+from .optimizer import get_optimizer, retain_valid_updates, retain_valid_weights
 
 
 class Algo(object):
@@ -24,9 +24,9 @@ class Algo(object):
                       'mode': 'sgdm',
                       'optimizer_params': '{}',
                       'elastic_force': None,
-                      'elastic_lr': 1.0,
+                      'lr': 1.0,
                       'elastic_momentum': 0,
-                      'lr': 0.05,
+                      'learning_rate': 0.05,
                       'weight_decay': 0.0002
     }
 
@@ -56,6 +56,8 @@ class Algo(object):
             self.optimizer = get_optimizer(optimizer)(**optimizer_args)
         else:
             self.optimizer = None
+            if self.mode == 'easgd':
+                self.optimizer = get_optimizer('sgdm')(learning_rate=0.05, momentum=0.9, weight_decay=0.0002)
 
         """ Workers are only responsible for computing the gradient and 
             sending it to the master, so we use ordinary SGD with learning rate 1 and 
@@ -104,27 +106,29 @@ class Algo(object):
         if self.mode == 'gem':  # Only possible in GEM mode
             return self.optimizer.compute_update(weights, update)
 
-    def set_worker_model_weights(self, model, weights):
+    def set_worker_model_weights(self, model, weights, gradients):
         """Apply a new set of weights to the worker's copy of the model"""
         if self.mode == 'easgd':
             new_weights = self.get_elastic_update(model.get_weights(), weights)
+            self.optimizer.apply_update(new_weights, gradients)
             model.set_weights(new_weights)
         else:
             model.set_weights(weights)
 
     def get_elastic_update(self, cur_weights, other_weights):
         """EASGD weights update"""
-        new_weights = []
-        for m_w, om_w in zip(cur_weights, other_weights):
-            if type(m_w) == list:
-                new_weights.append([])
-                for cur_w, other_w in zip(m_w, om_w):
-                    new_w = cur_w - self.elastic_force * np.subtract(cur_w, other_w)
-                    new_weights[-1].append(new_w)
-            else:
-                new_w = m_w - self.elastic_force * np.subtract(m_w, om_w)
-                new_weights.append(new_w)
-        return new_weights
+
+        for index, weights in other_weights['w'].items():
+            if index in cur_weights['pdw']:
+                cur_weights['pdw'][index] = retain_valid_updates(other_weights['w'][index], cur_weights['pdw'][index])
+
+        for index, v in other_weights['w'].items():
+            cur_weights['w'][index] = retain_valid_weights(other_weights['w'][index], cur_weights['w'][index])
+            cur_weights['w'][index] = cur_weights['w'][index] - self.elastic_force * (cur_weights['w'][index] - other_weights['w'][index])
+        for index, v in other_weights['b'].items():
+            cur_weights['b'][index] = cur_weights['b'][index] - self.elastic_force * (cur_weights['b'][index] - other_weights['b'][index])
+
+        return cur_weights
 
     def should_sync(self):
         """Determine whether to pull weights from the master"""
@@ -137,6 +141,17 @@ class Algo(object):
         """Calls the optimizer to apply an update
             and returns the resulting weights"""
         if self.mode == 'easgd':
-            return self.get_elastic_update(weights, update)
+            return self.get_elastic_update_master(weights, update)
         else:
             return self.optimizer.apply_update(weights, update)
+
+    def get_elastic_update_master(self, cur_weights, other_weights):
+        """EASGD weights update"""
+
+        for index, v in other_weights['w'].items():
+            other_weights['w'][index] = retain_valid_weights(cur_weights['w'][index], other_weights['w'][index])
+            cur_weights['w'][index] = cur_weights['w'][index] + self.elastic_force * (other_weights['w'][index] - cur_weights['w'][index])
+        for index, v in other_weights['b'].items():
+            cur_weights['b'][index] = cur_weights['b'][index] + self.elastic_force * (other_weights['b'][index] - cur_weights['b'][index])
+
+        return cur_weights

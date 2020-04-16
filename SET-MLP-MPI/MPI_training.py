@@ -54,7 +54,7 @@ if __name__ == '__main__':
                         'One of "sgd" (Stohastic Gradient Descent), "sgdm" (Stohastic Gradient Descent with Momentum),'
                         '"easgd" (Elastic Averaging SGD) or '
                         '"gem" (Gradient Energy Matching)',
-                        default='sgd')
+                        default='sgdm')
     parser.add_argument('--elastic-force', help='beta parameter for EASGD', type=float, default=0.9)
     parser.add_argument('--elastic-lr', help='worker SGD learning rate for EASGD',
                         type=float, default=1.0, dest='elastic_lr')
@@ -72,8 +72,8 @@ if __name__ == '__main__':
 
     # Model configuration
     parser.add_argument('--batch-size', type=int, default=128, help='input batch size for training (default: 64)')
-    parser.add_argument('--epochs', type=int, default=25,  help='number of epochs to train (default: 10)')
-    parser.add_argument('--lr', type=float, default=0.1, help='learning rate (default: 0.01)')
+    parser.add_argument('--epochs', type=int, default=15,  help='number of epochs to train (default: 10)')
+    parser.add_argument('--lr', type=float, default=0.05, help='learning rate (default: 0.01)')
     parser.add_argument('--lr-rate-decay', type=float, default=0.0, help='learning rate decay (default: 0)')
     parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum (default: 0.5)')
     parser.add_argument('--dropout-rate', type=float, default=0.2, help='Dropout rate')
@@ -119,6 +119,7 @@ if __name__ == '__main__':
     if num_processes == 1:
         # Load dataset
         X_train, Y_train, X_test, Y_test, X_val, Y_val = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
+        validate_every = int((X_train.shape[0] // args.batch_size) * num_workers)
         data = Data(batch_size=args.batch_size,
                     x_train=X_train, y_train=Y_train,
                     x_test=X_test, y_test=Y_test,
@@ -134,9 +135,11 @@ if __name__ == '__main__':
             #             x_test=X_test, y_test=Y_test)
 
             # Load normal dataset
-            partitions = shared_partitions(args.n_training_samples, num_workers, args.batch_size)
+
             X_train, Y_train, X_test, Y_test, X_val, Y_val = load_cifar10_data(args.n_training_samples,
                                                                                args.n_testing_samples)
+            validate_every = int((X_train.shape[0] // args.batch_size) * num_workers)
+            partitions = shared_partitions(X_train.shape[0], num_workers, args.batch_size)
             data = Data(batch_size=args.batch_size,
                         x_train=X_train[partitions[rank - 1]], y_train=Y_train[partitions[rank - 1]],
                         x_test=X_test, y_test=Y_test,
@@ -149,20 +152,20 @@ if __name__ == '__main__':
 
             X_train, Y_train,  X_test, Y_test, X_val, Y_val = load_cifar10_data(args.n_training_samples,
                                                                     args.n_testing_samples)
+
+            validate_every = int((X_train.shape[0] // args.batch_size) * num_workers)
             data = Data(batch_size=args.batch_size,
                         x_train=X_train, y_train=Y_train,
                         x_test=X_test, y_test=Y_test,
                         x_val=X_val, y_val=Y_val)
             del X_test, Y_test, X_val, Y_val
 
-    validate_every = int((args.n_training_samples // args.batch_size) * num_workers)
-
     # Some input arguments may be ignored depending on chosen algorithm
     if args.mode == 'easgd':
         algo = Algo(None, loss=args.loss, validate_every=validate_every,
                     mode='easgd', sync_every=args.sync_every,
                     elastic_force=args.elastic_force / (num_workers),
-                    elastic_lr=args.elastic_lr,
+                    elastic_lr=args.elastic_lr, lr=args.lr,
                     elastic_momentum=args.elastic_momentum)
     elif args.mode == 'gem':
         algo = Algo('gem', loss=args.loss, validate_every=validate_every,
@@ -204,7 +207,7 @@ if __name__ == '__main__':
 
         logging.info("------------------------------------------------------------------------------------------------")
         logging.info("Final performance of the model on the test dataset")
-        manager.process.test(manager.process.weights)
+        manager.process.validate(manager.process.weights)
 
     comm.barrier()
     logging.info("Terminating")

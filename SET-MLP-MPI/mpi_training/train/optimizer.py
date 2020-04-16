@@ -400,6 +400,22 @@ def retain_valid_updates(weights, gradient):
     return gradient
 
 
+def retain_valid_weights(correct_weights, new_weights):
+    cols = new_weights.shape[1]
+    Ia, Ja, Va = sparse.find(correct_weights)
+    Ib, Jb, Vb = sparse.find(new_weights)
+    Ka = Ia * cols + Ja
+    Kb = Ib * cols + Jb
+
+    indices = list(set(Kb).intersection(set(Ka)))
+    if indices:
+        rows, cols = np.unravel_index(indices, new_weights.shape)
+        weights = correct_weights.tolil()
+        weights[rows, cols] = new_weights[rows, cols]
+
+    return weights.tocsr()
+
+
 class OptimizerBuilder(object):
     """Builds a  optimizer"""
 

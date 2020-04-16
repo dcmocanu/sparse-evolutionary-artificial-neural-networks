@@ -1,13 +1,14 @@
 ### Utilities for mpi_learn module
 import os
 import numpy as np
+from sklearn.model_selection import train_test_split
+import joblib
+import pickle
+import h5py
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from keras.datasets import cifar10
 from keras.utils import np_utils
 from PIL import Image
-import joblib
-import pickle
-import h5py
 
 # Augmented dataset path
 cur_dir = os.path.dirname(os.path.abspath(__file__))
@@ -75,10 +76,11 @@ def load_cifar10_data(n_training_samples, n_testing_samples):
     index_test = np.arange(x_test.shape[0])
     np.random.shuffle(index_test)
 
-    x_train = x[index_train[0:n_training_samples], :]
-    y_train = y[index_train[0:n_training_samples], :]
-    x_val = x[index_train[n_training_samples:n_training_samples+n_testing_samples], :]
-    y_val = y[index_train[n_training_samples:n_training_samples+n_testing_samples], :]
+    x = x[index_train[0:n_training_samples], :]
+    y = y[index_train[0:n_training_samples], :]
+
+    x_train, x_val, y_train, y_val = train_test_split(x, y, test_size=0.2, random_state=1)
+
     x_test = x_test[index_test[0:n_testing_samples], :]
     y_test = y_test[index_test[0:n_testing_samples], :]
 

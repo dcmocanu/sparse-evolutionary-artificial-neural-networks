@@ -59,8 +59,7 @@ class MPIProcess(object):
         self.save_filename = save_filename
         self.idle_time = 0.0
 
-        self.inputLayerConnections =[]
-
+        self.gradients = None
         self.update = None
         self.stop_training = False
         self.time_step = 0
@@ -157,12 +156,11 @@ class MPIProcess(object):
         t2 = datetime.datetime.now()
         self.idle_time += (t2 - t1).total_seconds()
 
-        self.algo.set_worker_model_weights(self.model, self.weights)
-
+        self.algo.set_worker_model_weights(self.model, self.weights, self.gradients)
 
     def apply_update(self):
         """Updates weights according to update received from worker process"""
-        with np.errstate(divide='raise',invalid='raise', over='raise'):
+        with np.errstate(divide='raise', invalid='raise', over='raise'):
             self.weights = self.algo.apply_update(self.weights, self.update)
             self.model.set_weights(self.weights)
 
@@ -359,7 +357,7 @@ class MPIProcess(object):
 
                 # perform the update with momentum
                 if index not in self.update:
-                    self.update[index] = (dw,np.mean(delta, 0))
+                    self.update[index] = (dw, np.mean(delta, 0))
                 else:
                     self.update[index] = (self.update[index][0] + dw, self.update[index][1] + np.mean(delta, 0))
 
@@ -410,7 +408,12 @@ class MPIWorker(MPIProcess):
         super(MPIWorker, self).build_model()
 
     def sync_with_parent(self):
+
+        if self.algo.mode == 'easgd':
+            self.compute_update()
+
         if self.algo.mode == 'gem':
+            self.compute_update()
             self.do_gem_sequence()
         else:
             self.do_send_sequence()
@@ -512,6 +515,11 @@ class MPIWorker(MPIProcess):
         self.logger.info(f"Worker idle time: {self.idle_time}")
 
         self.send_exit_to_parent()
+
+    def compute_update(self):
+        """Compute the update from the new and old sets of model weights"""
+        self.gradients = self.update
+        self.update = self.algo.compute_update(self.weights, self.model.get_weights())
 
     def await_signal_from_parent(self):
         """Wait for 'train' signal from parent process"""
@@ -620,9 +628,24 @@ class MPIMaster(MPIProcess):
 
             if self.decide_whether_to_sync():
                 if self.algo.send_before_apply:
+
                     self.sync_parent()
                     self.sync_children()
                     self.apply_update()
+
+                    if self.algo.validate_every > 0 and self.time_step > 0:
+                        if self.time_step % self.algo.validate_every == 0:
+                            self.weights_to_save.append(self.weights['w'])
+                            self.biases_to_save.append(self.weights['b'])
+                            self.validate(self.weights)
+                            if self.epoch < self.num_epochs // self.num_workers - 1:
+                                t5 = datetime.datetime.now()
+                                self.model.model.weightsEvolution_III()
+                                t6 = datetime.datetime.now()
+                                self.logger.info(f"Weights evolution time  {t6 - t5}")
+                                self.weights = self.model.get_weights()
+                            self.logger.info(f"Master epoch {self.epoch + 1}")
+
                 else:
                     self.apply_update()
                     if self.is_synchronous():
@@ -634,14 +657,14 @@ class MPIMaster(MPIProcess):
                             self.biases_to_save.append(self.weights['b'])
 
                             self.validate(self.weights)
-                            if self.epoch < self.num_epochs//self.num_workers:
+                            if self.epoch < self.num_epochs//self.num_workers - 1:
                                 t5 = datetime.datetime.now()
                                 self.model.weight_evolution()
                                 t6 = datetime.datetime.now()
                                 self.logger.info(f"Weights evolution time  {t6 - t5}")
                                 self.weights = self.model.get_weights()
 
-                            self.logger.info(f"Master epoch {self.epoch}")
+                            self.logger.info(f"Master epoch {self.epoch+1}")
 
                     self.sync_parent()
                     self.sync_children()

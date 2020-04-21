@@ -72,7 +72,7 @@ if __name__ == '__main__':
 
     # Model configuration
     parser.add_argument('--batch-size', type=int, default=128, help='input batch size for training (default: 64)')
-    parser.add_argument('--epochs', type=int, default=15,  help='number of epochs to train (default: 10)')
+    parser.add_argument('--epochs', type=int, default=1000,  help='number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=0.05, help='learning rate (default: 0.01)')
     parser.add_argument('--lr-rate-decay', type=float, default=0.0, help='learning rate decay (default: 0)')
     parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum (default: 0.5)')
@@ -86,8 +86,8 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=1, help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=10,
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--n-training-samples', type=int, default=5000, help='Number of training samples')
-    parser.add_argument('--n-testing-samples', type=int, default=1000, help='Number of testing samples')
+    parser.add_argument('--n-training-samples', type=int, default=50000, help='Number of training samples')
+    parser.add_argument('--n-testing-samples', type=int, default=10000, help='Number of testing samples')
 
     args = parser.parse_args()
 
@@ -171,9 +171,11 @@ if __name__ == '__main__':
         algo = Algo('gem', loss=args.loss, validate_every=validate_every,
                     mode='gem', sync_every=args.sync_every,
                     learning_rate=args.gem_lr, momentum=args.gem_momentum, kappa=args.gem_kappa)
-    else:
-        algo = Algo(optimizer='sgdm', loss=args.loss, validate_every=validate_every, lr=args.lr,
+    elif args.mode == 'sgdm':
+        algo = Algo(optimizer='sgdm', validate_every=validate_every, lr=args.lr,
                     sync_every=args.sync_every, weight_decay=args.weight_decay, momentum=args.gem_momentum)
+    else:
+        algo = Algo(optimizer='sgd', validate_every=validate_every, lr=args.lr, sync_every=args.sync_every)
 
     # Model architecture cifar10
     dimensions = (3072, 4000, 1000, 4000, 10)

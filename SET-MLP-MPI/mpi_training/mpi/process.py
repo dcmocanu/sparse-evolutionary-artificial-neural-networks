@@ -637,13 +637,19 @@ class MPIMaster(MPIProcess):
                         if self.time_step % self.algo.validate_every == 0:
                             self.weights_to_save.append(self.weights['w'])
                             self.biases_to_save.append(self.weights['b'])
+
                             self.validate(self.weights)
                             if self.epoch < self.num_epochs // self.num_workers - 1:
                                 t5 = datetime.datetime.now()
+                                self.logger.info(self.weights['w'][1].count_nonzero())
+                                self.logger.info(self.weights['w'][2].count_nonzero())
+                                self.logger.info(self.weights['w'][3].count_nonzero())
+                                self.logger.info(self.weights['w'][4].count_nonzero())
                                 self.model.model.weightsEvolution_III()
                                 t6 = datetime.datetime.now()
                                 self.logger.info(f"Weights evolution time  {t6 - t5}")
-                                self.weights = self.model.get_weights()
+
+                            self.weights = self.model.get_weights()
                             self.logger.info(f"Master epoch {self.epoch + 1}")
 
                 else:
@@ -659,10 +665,18 @@ class MPIMaster(MPIProcess):
                             self.validate(self.weights)
                             if self.epoch < self.num_epochs//self.num_workers - 1:
                                 t5 = datetime.datetime.now()
+                                self.logger.info(self.weights['w'][1].count_nonzero())
+                                self.logger.info(self.weights['w'][2].count_nonzero())
+                                self.logger.info(self.weights['w'][3].count_nonzero())
+                                self.logger.info(self.weights['w'][4].count_nonzero())
                                 self.model.weight_evolution()
                                 t6 = datetime.datetime.now()
                                 self.logger.info(f"Weights evolution time  {t6 - t5}")
                                 self.weights = self.model.get_weights()
+                                self.logger.info(self.weights['w'][1].count_nonzero())
+                                self.logger.info(self.weights['w'][2].count_nonzero())
+                                self.logger.info(self.weights['w'][3].count_nonzero())
+                                self.logger.info(self.weights['w'][4].count_nonzero())
 
                             self.logger.info(f"Master epoch {self.epoch+1}")
 

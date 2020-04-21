@@ -18,16 +18,13 @@ class Algo(object):
           """
 
     # available options and their default values
-    supported_opts = {'loss': 'mse',
+    supported_opts = {
                       'validate_every': 1000,
                       'sync_every': 1,
                       'mode': 'sgdm',
                       'optimizer_params': '{}',
                       'elastic_force': None,
-                      'lr': 1.0,
-                      'elastic_momentum': 0,
-                      'learning_rate': 0.05,
-                      'weight_decay': 0.0002
+                      'elastic_momentum': 0
     }
 
     def __init__(self, optimizer, **kwargs):
@@ -53,11 +50,12 @@ class Algo(object):
         if optimizer is not None:
             optimizer_args = {arg: val for arg, val in kwargs.items()
                               if arg not in self.supported_opts}
+
             self.optimizer = get_optimizer(optimizer)(**optimizer_args)
         else:
             self.optimizer = None
             if self.mode == 'easgd':
-                self.optimizer = get_optimizer('sgdm')(learning_rate=0.05, momentum=0.9, weight_decay=0.0002)
+                self.optimizer = get_optimizer('sgdm')(lr=0.05, momentum=0.9, weight_decay=0.0002)
 
         """ Workers are only responsible for computing the gradient and 
             sending it to the master, so we use ordinary SGD with learning rate 1 and 
@@ -106,7 +104,7 @@ class Algo(object):
         if self.mode == 'gem':  # Only possible in GEM mode
             return self.optimizer.compute_update(weights, update)
 
-    def set_worker_model_weights(self, model, weights, gradients):
+    def set_worker_model_weights(self, model, weights, gradients=None):
         """Apply a new set of weights to the worker's copy of the model"""
         if self.mode == 'easgd':
             new_weights = self.get_elastic_update(model.get_weights(), weights)

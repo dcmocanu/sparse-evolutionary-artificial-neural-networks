@@ -22,9 +22,9 @@ class VanillaSGD(Optimizer):
     """Stochastic gradient descent with no extra frills.
           learning_rate: learning rate parameter for SGD"""
 
-    def __init__(self, learning_rate):
+    def __init__(self, lr):
         super(VanillaSGD, self).__init__()
-        self.learning_rate = learning_rate
+        self.learning_rate = lr
 
     def apply_update(self, weights, gradient):
         """Move weights in the direction of the gradient, by the amount of the
@@ -48,9 +48,9 @@ class MomentumSGD(Optimizer):
     """Stochastic gradient descent with momentum and weight decay
           learning_rate: learning rate parameter for SGD"""
 
-    def __init__(self, learning_rate=0.05, weight_decay=0.0002, momentum=0.9):
+    def __init__(self, lr, weight_decay, momentum):
         super(MomentumSGD, self).__init__()
-        self.learning_rate = learning_rate
+        self.learning_rate = lr
         self.weight_decay = weight_decay
         self.momentum = momentum
 
@@ -410,10 +410,10 @@ def retain_valid_weights(correct_weights, new_weights):
     indices = list(set(Kb).intersection(set(Ka)))
     if indices:
         rows, cols = np.unravel_index(indices, new_weights.shape)
-        weights = correct_weights.tolil()
-        weights[rows, cols] = new_weights[rows, cols]
+        correct_weights = correct_weights.tolil()
+        correct_weights[rows, cols] = new_weights[rows, cols]
 
-    return weights.tocsr()
+    return correct_weights.tocsr()
 
 
 class OptimizerBuilder(object):

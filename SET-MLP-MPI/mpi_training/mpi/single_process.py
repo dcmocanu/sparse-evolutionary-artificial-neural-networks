@@ -61,8 +61,7 @@ class MPISingleWorker(MPIWorker):
 
             weights.append(self.weights['w'])
             biases.append(self.weights['b'])
-            if epoch < self.num_epochs:  # do not change connectivity pattern after the last epoch
-
+            if epoch < self.num_epochs -1:  # do not change connectivity pattern after the last epoch
                 self.model.weight_evolution()
                 self.weights = self.model.get_weights()
 
@@ -78,3 +77,6 @@ class MPISingleWorker(MPIWorker):
 
     def test(self, weights):
         return MPIMaster.test_aux(self, weights, self.model)
+
+    def validate(self, weights):
+        return MPIMaster.validate_aux(self, weights, self.model)

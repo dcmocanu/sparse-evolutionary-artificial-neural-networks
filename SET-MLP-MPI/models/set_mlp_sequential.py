@@ -349,6 +349,9 @@ class SET_MLP:
             t5 = datetime.datetime.now()
             weights.append(self.w)
             biases.append(self.b)
+
+            np.savez_compressed(self.save_filename + "_weights.npz", *weights)
+            np.savez_compressed(self.save_filename + "_biases.npz", *biases)
             if (i < self.epochs - 1):  # do not change connectivity pattern after the last epoch
 
                 # self.weightsEvolution_I() # this implementation is more didactic, but slow.
@@ -360,8 +363,7 @@ class SET_MLP:
             if (self.save_filename != ""):
                 np.savetxt(self.save_filename+".txt", metrics)
 
-            np.savez_compressed(self.save_filename + "_weights.npz", *weights)
-            np.savez_compressed(self.save_filename + "_biases.npz", *biases)
+
 
         return metrics
 

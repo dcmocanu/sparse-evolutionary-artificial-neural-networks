@@ -13,9 +13,9 @@ parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=3000, metavar='N',
                     help='input batch size for testing (default: 1000)')
-parser.add_argument('--epochs', type=int, default=25, metavar='N',
+parser.add_argument('--epochs', type=int, default=500, metavar='N',
                     help='number of epochs to train (default: 10)')
-parser.add_argument('--lr', type=float, default=0.05, metavar='LR',
+parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                     help='learning rate (default: 0.01)')
 parser.add_argument('--lr-rate-decay', type=float, default=0.0, metavar='LRD',
                     help='learning rate decay (default: 0)')
@@ -82,14 +82,15 @@ if __name__ == "__main__":
             'n_hidden_neurons': n_hidden_neurons,
             'n_training_samples': n_training_samples,
             'n_testing_samples': n_testing_samples,
-            'loss': 'mse'
+            'loss': 'cross_entropy'
         }
 
-        np.random.seed(i)
+
+        np.random.seed(0)
 
         # Load augmented dataset
         start_time = time.time()
-        X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
+        X_train, Y_train, X_test, Y_test, X_val, Y_val = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
         step_time = time.time() - start_time
         print("Loading augmented dataset time: ", step_time)
 
@@ -101,10 +102,10 @@ if __name__ == "__main__":
         n_hidden_neurons, Y_train.shape[1])
 
         set_mlp = SET_MLP((X_train.shape[1], 4000, 1000, 4000,
-                           Y_train.shape[1]), (Relu, Relu, Relu, Sigmoid), **config)
+                           Y_train.shape[1]), (Relu, Relu, Relu, Softmax), **config)
         start_time = time.time()
-        set_mlp.fit(X_train, Y_train, X_test, Y_test, batch_size, testing=True,
-                    save_filename="Results/set_mlp_" + str(n_training_samples) + "_training_samples_e" + str(
+        set_mlp.fit(X_train, Y_train, X_test, Y_test, X_val, Y_val, batch_size, testing=True,
+                    save_filename="Results/set_mlp_sequential_softmax" + str(n_training_samples) + "_training_samples_e" + str(
                         epsilon) + "_rand" + str(i))
         step_time = time.time() - start_time
         print("\nTotal training time: ", step_time)

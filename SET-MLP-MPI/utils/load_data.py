@@ -79,7 +79,7 @@ def load_cifar10_data(n_training_samples, n_testing_samples):
     x = x[index_train[0:n_training_samples], :]
     y = y[index_train[0:n_training_samples], :]
 
-    x_train, x_val, y_train, y_val = train_test_split(x, y, test_size=0.2, random_state=1)
+    x_train, x_val, y_train, y_val = train_test_split(x, y, test_size=0.1, random_state=1)
 
     x_test = x_test[index_test[0:n_testing_samples], :]
     y_test = y_test[index_test[0:n_testing_samples], :]
@@ -97,6 +97,40 @@ def load_cifar10_data(n_training_samples, n_testing_samples):
 
     return x_train, y_train, x_test, y_test, x_val, y_val
 
+
+def load_cifar10_data_not_flattened(n_training_samples, n_testing_samples):
+    np.random.seed(0)
+
+    # read CIFAR10 data
+    (x, y), (x_test, y_test) = cifar10.load_data()
+
+    y = np_utils.to_categorical(y, 10)
+    y_test = np_utils.to_categorical(y_test, 10)
+    x = x.astype('float32')
+    x_test = x_test.astype('float32')
+
+    index_train = np.arange(x.shape[0])
+    np.random.shuffle(index_train)
+
+    index_test = np.arange(x_test.shape[0])
+    np.random.shuffle(index_test)
+
+    x = x[index_train[0:n_training_samples], :]
+    y = y[index_train[0:n_training_samples], :]
+
+    x_train, x_val, y_train, y_val = train_test_split(x, y, test_size=0.1, random_state=1)
+
+    x_test = x_test[index_test[0:n_testing_samples], :]
+    y_test = y_test[index_test[0:n_testing_samples], :]
+
+    # Normalize data
+    x_train_mean = np.mean(x_train, axis=0)
+    x_train_std = np.std(x_train, axis=0)
+    x_train = (x_train - x_train_mean) / x_train_std
+    x_test = (x_test - x_train_mean) / x_train_std
+    x_val = (x_val - x_train_mean) / x_train_std
+
+    return x_train, y_train, x_test, y_test, x_val, y_val
 
 def load_images(curr_dir, label):
     print(f"Loading class {label} images ...")

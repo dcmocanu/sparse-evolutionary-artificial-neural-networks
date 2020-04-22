@@ -32,15 +32,17 @@
 # Thomas Hagebols: for performing a thorough analyze on the performance of SciPy sparse matrix operations
 # Ritchie Vink (https://www.ritchievink.com): for making available on Github a nice Python implementation of fully connected MLPs. This SET-MLP implementation was built on top of his MLP code:
 #                                             https://github.com/ritchie46/vanilla-machine-learning/blob/master/vanilla_mlp.py
-import numpy as np
+
 from scipy.sparse import lil_matrix
 from scipy.sparse import coo_matrix
 from scipy.sparse import dok_matrix
+from models.nn_functions import *
 # the "sparseoperations" Cython library was tested in Ubuntu 16.04. Please note that you may encounter some "solvable" issues if you compile it in Windows.
 import sparseoperations
 import datetime
 import os
 import sys
+import numpy as np
 
 stderr = sys.stderr
 sys.stderr = open(os.devnull, 'w')
@@ -81,89 +83,6 @@ def array_intersect(A, B):
     nrows, ncols = A.shape
     dtype = {'names': ['f{}'.format(i) for i in range(ncols)], 'formats': ncols * [A.dtype]}
     return np.in1d(A.view(dtype), B.view(dtype))  # boolean return
-
-
-class Relu:
-    @staticmethod
-    def activation(z):
-        z[z < 0] = 0
-        return z
-
-    @staticmethod
-    def prime(z):
-        z[z < 0] = 0
-        z[z > 0] = 1
-        return z
-
-
-class Sigmoid:
-    @staticmethod
-    def activation(z):
-        return 1 / (1 + np.exp(-z))
-
-    @staticmethod
-    def prime(z):
-        return Sigmoid.activation(z) * (1 - Sigmoid.activation(z))
-
-
-class MSE:
-    def __init__(self, activation_fn=None):
-        """
-
-        :param activation_fn: Class object of the activation function.
-        """
-        if activation_fn:
-            self.activation_fn = activation_fn
-        else:
-            self.activation_fn = NoActivation
-
-    def activation(self, z):
-        return self.activation_fn.activation(z)
-
-    @staticmethod
-    def loss(y_true, y_pred):
-        """
-        :param y_true: (array) One hot encoded truth vector.
-        :param y_pred: (array) Prediction vector
-        :return: (flt)
-        """
-        return np.mean((y_pred - y_true) ** 2)
-
-    @staticmethod
-    def prime(y_true, y_pred):
-        return y_pred - y_true
-
-    def delta(self, y_true, y_pred):
-        """
-        Back propagation error delta
-        :return: (array)
-        """
-        return self.prime(y_true, y_pred) * self.activation_fn.prime(y_pred)
-
-
-class NoActivation:
-    """
-    This is a plugin function for no activation.
-
-    f(x) = x * 1
-    """
-
-    @staticmethod
-    def activation(z):
-        """
-        :param z: (array) w(x) + b
-        :return: z (array)
-        """
-        return z
-
-    @staticmethod
-    def prime(z):
-        """
-        The prime of z * 1 = 1
-        :param z: (array)
-        :return: z': (array)
-        """
-        return np.ones_like(z)
 
 
 class SET_MLP:
@@ -229,6 +148,8 @@ class SET_MLP:
         # print("Creation sparse weights time: ", t2 - t1)
         if config['loss'] == 'mse':
             self.loss = MSE(self.activations[self.n_layers])
+        elif config['loss'] == 'cross_entropy':
+            self.loss = CrossEntropy()
         else:
             raise NotImplementedError("The given loss function is  ot implemented")
 
@@ -357,7 +278,7 @@ class SET_MLP:
         accuracy, activations = self.predict(x, y)
         return self.loss.loss(y, activations), accuracy
 
-    def fit(self, x, y_true, x_test, y_test, batch_size=128, testing=True, save_filename=""):
+    def fit(self, x, y_true, x_test, y_test, x_val, y_val, batch_size=128, testing=True, save_filename=""):
         """
         :param x: (array) Containing parameters
         :param y_true: (array) Containing one hot encoded labels.
@@ -374,7 +295,10 @@ class SET_MLP:
                             inputLayerConnections=self.inputLayerConnections)
 
         maximum_accuracy = 0
-        metrics = np.zeros((self.epochs, 4))
+        metrics = np.zeros((self.epochs, 6))
+
+        weights = []
+        biases = []
 
         for i in range(self.epochs):
             # Shuffle the data
@@ -402,20 +326,29 @@ class SET_MLP:
             # this part is useful to understand model performance and can be commented for production settings
             if (testing):
                 t3 = datetime.datetime.now()
-                accuracy_test, activations_test = self.predict(x_test, y_test, batch_size)
-                accuracy_train, activations_train = self.predict(x, y_true, batch_size)
+                accuracy_test, activations_test = self.predict(x_test, y_test)
+                accuracy_val, activations_val = self.predict(x_val, y_val)
+                accuracy_train, activations_train = self.predict(x, y_true)
+
                 t4 = datetime.datetime.now()
-                maximum_accuracy = max(maximum_accuracy, accuracy_test)
+                maximum_accuracy = max(maximum_accuracy, accuracy_val)
                 loss_test = self.loss.loss(y_test, activations_test)
+                loss_val = self.loss.loss(y_val, activations_val)
                 loss_train = self.loss.loss(y_true, activations_train)
                 metrics[i, 0] = loss_train
-                metrics[i, 1] = loss_test
-                metrics[i, 2] = accuracy_train
-                metrics[i, 3] = accuracy_test
-                print("Testing time: ", t4 - t3,"; Loss train: ", loss_train, "; Loss test: ", loss_test, "; Accuracy train: ", accuracy_train,"; Accuracy test: ", accuracy_test,
-                      "; Maximum accuracy test: ", maximum_accuracy)
+                metrics[i - 1, 1] = loss_val
+                metrics[i - 1, 2] = loss_test
+                metrics[i, 3] = accuracy_train
+                metrics[i, 4] = accuracy_val
+                metrics[i, 5] = accuracy_test
+
+                print(f"Testing time: {t4 - t3}\n; Loss val: {loss_val}; Loss test: {loss_test}; \n"
+                                 f"Accuracy val: {accuracy_val}; Accuracy test: {accuracy_test}; \n"
+                                 f"Maximum accuracy val: {maximum_accuracy}")
 
             t5 = datetime.datetime.now()
+            weights.append(self.w)
+            biases.append(self.b)
             if (i < self.epochs - 1):  # do not change connectivity pattern after the last epoch
 
                 # self.weightsEvolution_I() # this implementation is more didactic, but slow.
@@ -426,6 +359,9 @@ class SET_MLP:
             # save performance metrics values in a file
             if (self.save_filename != ""):
                 np.savetxt(self.save_filename+".txt", metrics)
+
+            np.savez_compressed(self.save_filename + "_weights.npz", *weights)
+            np.savez_compressed(self.save_filename + "_biases.npz", *biases)
 
         return metrics
 
@@ -596,4 +532,5 @@ class SET_MLP:
                 correct_classification += 1
         accuracy = correct_classification / y_test.shape[0]
         return accuracy, activations
+
 

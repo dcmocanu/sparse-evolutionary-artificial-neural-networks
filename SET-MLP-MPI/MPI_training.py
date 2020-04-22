@@ -107,7 +107,7 @@ if __name__ == '__main__':
     }
 
     # Comment this if you would like to use the full power of randomization. I use it to have repeatable results.
-    np.random.seed(1)
+    np.random.seed(0)
 
     comm = MPI.COMM_WORLD.Dup()
 

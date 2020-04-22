@@ -32,15 +32,17 @@
 # Thomas Hagebols: for performing a thorough analyze on the performance of SciPy sparse matrix operations
 # Ritchie Vink (https://www.ritchievink.com): for making available on Github a nice Python implementation of fully connected MLPs. This SET-MLP implementation was built on top of his MLP code:
 #                                             https://github.com/ritchie46/vanilla-machine-learning/blob/master/vanilla_mlp.py
-import numpy as np
+
 from keras.losses import *
 from scipy.sparse import lil_matrix
 from scipy.sparse import coo_matrix
 from scipy.sparse import dok_matrix
+from models.nn_functions import *
 # the "sparseoperations" Cython library was tested in Ubuntu 16.04. Please note that you may encounter some "solvable" issues if you compile it in Windows.
 import sparseoperations
 import datetime
 import os
+import numpy as np
 import sys
 
 stderr = sys.stderr
@@ -82,95 +84,6 @@ def array_intersect(A, B):
     nrows, ncols = A.shape
     dtype = {'names': ['f{}'.format(i) for i in range(ncols)], 'formats': ncols * [A.dtype]}
     return np.in1d(A.view(dtype), B.view(dtype))  # boolean return
-
-
-class Relu:
-    @staticmethod
-    def activation(z):
-        z[z < 0] = 0
-        return z
-
-    @staticmethod
-    def prime(z):
-        z[z < 0] = 0
-        z[z > 0] = 1
-        return z
-
-
-class Sigmoid:
-    @staticmethod
-    def activation(z):
-        # return np.where(z > 0, 1. / (1. + np.exp(-z)), np.exp(z) / (np.exp(z) + np.exp(0)))
-        # return .5 * (1 + np.tanh(.5 * z))
-        # restrict domain of sigmoid function within [1e-15, 1 - 1e-15]
-        sigmoid_range = 34.538776394910684
-        x = np.clip(z, -sigmoid_range, sigmoid_range)
-
-        return 1.0 / (1.0 + np.exp(-x))
-
-    @staticmethod
-    def prime(z):
-        return Sigmoid.activation(z) * (1. - Sigmoid.activation(z))
-
-
-class MSE:
-    def __init__(self, activation_fn=None):
-        """
-
-        :param activation_fn: Class object of the activation function.
-        """
-        if activation_fn:
-            self.activation_fn = activation_fn
-        else:
-            self.activation_fn = NoActivation
-
-    def activation(self, z):
-        return self.activation_fn.activation(z)
-
-    @staticmethod
-    def loss(y_true, y_pred):
-        """
-        :param y_true: (array) One hot encoded truth vector.
-        :param y_pred: (array) Prediction vector
-        :return: (flt)
-        """
-        return np.mean((y_pred - y_true) ** 2)
-
-    @staticmethod
-    def prime(y_true, y_pred):
-        return y_pred - y_true
-
-    def delta(self, y_true, y_pred):
-        """
-        Back propagation error delta
-        :return: (array)
-        """
-        return self.prime(y_true, y_pred) * self.activation_fn.prime(y_pred)
-
-
-class NoActivation:
-    """
-    This is a plugin function for no activation.
-
-    f(x) = x * 1
-    """
-
-    @staticmethod
-    def activation(z):
-        """
-        :param z: (array) w(x) + b
-        :return: z (array)
-        """
-        return z
-
-    @staticmethod
-    def prime(z):
-        """
-        The prime of z * 1 = 1
-        :param z: (array)
-        :return: z': (array)
-        """
-        return np.ones_like(z)
 
 
 class SET_MLP:

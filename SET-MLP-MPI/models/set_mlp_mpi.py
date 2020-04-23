@@ -131,6 +131,8 @@ class SET_MLP:
         # print("Creation sparse weights time: ", t2 - t1)
         if config['loss'] == 'mse':
             self.loss = MSE(self.activations[self.n_layers])
+        elif config['loss'] == 'cross_entropy':
+            self.loss = CrossEntropy()
         else:
             raise NotImplementedError("The given loss function is  ot implemented")
 

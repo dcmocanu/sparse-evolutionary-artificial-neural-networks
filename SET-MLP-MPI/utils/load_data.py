@@ -77,7 +77,7 @@ def load_cifar10_data(n_training_samples, n_testing_samples):
     np.random.shuffle(index_test)
 
     x_train = x[index_train[0:n_training_samples], :]
-    y_test = y[index_train[0:n_training_samples], :]
+    y_train = y[index_train[0:n_training_samples], :]
 
     x_test = x_test[index_test[0:n_testing_samples], :]
     y_test = y_test[index_test[0:n_testing_samples], :]

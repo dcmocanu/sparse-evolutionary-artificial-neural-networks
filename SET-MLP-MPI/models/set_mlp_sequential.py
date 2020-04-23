@@ -359,8 +359,6 @@ class SET_MLP:
             if (self.save_filename != ""):
                 np.savetxt(self.save_filename+".txt", metrics)
 
-
-
         return metrics
 
     def getCoreInputConnections(self):

@@ -55,7 +55,10 @@ class CrossEntropy:
         :param y: (array) Prediction vector
         :return: (flt)
         """
-        return - np.mean(y_true * np.log(y))
+        # return - np.mean(y_true * np.log(y))
+        y_true /= y.sum(axis=-1, keepdims=True)
+        output = np.clip(y, 1e-7, 1 - 1e-7)
+        return np.sum(y_true * -np.log(output), axis=-1, keepdims=False)
 
 
 class MSE:

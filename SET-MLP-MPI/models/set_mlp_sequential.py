@@ -278,7 +278,7 @@ class SET_MLP:
         accuracy, activations = self.predict(x, y)
         return self.loss.loss(y, activations), accuracy
 
-    def fit(self, x, y_true, x_test, y_test, x_val, y_val, batch_size=128, testing=True, save_filename=""):
+    def fit(self, x, y_true, x_test, y_test, batch_size=100, testing=True, save_filename=""):
         """
         :param x: (array) Containing parameters
         :param y_true: (array) Containing one hot encoded labels.
@@ -295,7 +295,7 @@ class SET_MLP:
                             inputLayerConnections=self.inputLayerConnections)
 
         maximum_accuracy = 0
-        metrics = np.zeros((self.epochs, 6))
+        metrics = np.zeros((self.epochs, 4))
 
         weights = []
         biases = []
@@ -327,23 +327,19 @@ class SET_MLP:
             if (testing):
                 t3 = datetime.datetime.now()
                 accuracy_test, activations_test = self.predict(x_test, y_test)
-                accuracy_val, activations_val = self.predict(x_val, y_val)
                 accuracy_train, activations_train = self.predict(x, y_true)
 
                 t4 = datetime.datetime.now()
-                maximum_accuracy = max(maximum_accuracy, accuracy_val)
+                maximum_accuracy = max(maximum_accuracy, accuracy_test)
                 loss_test = self.loss.loss(y_test, activations_test)
-                loss_val = self.loss.loss(y_val, activations_val)
                 loss_train = self.loss.loss(y_true, activations_train)
                 metrics[i, 0] = loss_train
-                metrics[i - 1, 1] = loss_val
                 metrics[i - 1, 2] = loss_test
-                metrics[i, 3] = accuracy_train
-                metrics[i, 4] = accuracy_val
-                metrics[i, 5] = accuracy_test
+                metrics[i, 2] = accuracy_train
+                metrics[i, 3] = accuracy_test
 
-                print(f"Testing time: {t4 - t3}\n; Loss val: {loss_val}; Loss test: {loss_test}; \n"
-                                 f"Accuracy val: {accuracy_val}; Accuracy test: {accuracy_test}; \n"
+                print(f"Testing time: {t4 - t3}\n; Loss test: {loss_test}; \n"
+                                 f"Accuracy test: {accuracy_test}; \n"
                                  f"Maximum accuracy val: {maximum_accuracy}")
 
             t5 = datetime.datetime.now()

@@ -23,7 +23,7 @@ parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                     help='SGD momentum (default: 0.9)')
 parser.add_argument('--dropout-rate', type=float, default=0.3, metavar='D',
                     help='Dropout rate')
-parser.add_argument('--weight-decay', type=float, default=0.0002, metavar='W',
+parser.add_argument('--weight-decay', type=float, default=0.0, metavar='W',
                     help='Dropout rate')
 parser.add_argument('--epsilon', type=int, default=20, metavar='E',
                     help='Sparsity level')
@@ -32,7 +32,7 @@ parser.add_argument('--zeta', type=float, default=0.3, metavar='Z',
                          'random ones after every epoch(in [0..1])')
 parser.add_argument('--n-neurons', type=int, default=3000, metavar='H',
                     help='Number of neurons in the hidden layer')
-parser.add_argument('--seed', type=int, default=1, metavar='S',
+parser.add_argument('--seed', type=int, default=0, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
@@ -90,7 +90,7 @@ if __name__ == "__main__":
 
         # Load augmented dataset
         start_time = time.time()
-        X_train, Y_train, X_test, Y_test, X_val, Y_val = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
+        X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
         step_time = time.time() - start_time
         print("Loading augmented dataset time: ", step_time)
 
@@ -104,8 +104,8 @@ if __name__ == "__main__":
         set_mlp = SET_MLP((X_train.shape[1], 4000, 1000, 4000,
                            Y_train.shape[1]), (Relu, Relu, Relu, Softmax), **config)
         start_time = time.time()
-        set_mlp.fit(X_train, Y_train, X_test, Y_test, X_val, Y_val, batch_size, testing=True,
-                    save_filename="Results/set_mlp_sequential_softmax" + str(n_training_samples) + "_training_samples_e" + str(
+        set_mlp.fit(X_train, Y_train, X_test, Y_test, batch_size, testing=True,
+                    save_filename="Results/set_mlp_sequential_softmax_no_decay" + str(n_training_samples) + "_training_samples_e" + str(
                         epsilon) + "_rand" + str(i))
         step_time = time.time() - start_time
         print("\nTotal training time: ", step_time)

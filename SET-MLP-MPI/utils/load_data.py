@@ -76,10 +76,8 @@ def load_cifar10_data(n_training_samples, n_testing_samples):
     index_test = np.arange(x_test.shape[0])
     np.random.shuffle(index_test)
 
-    x = x[index_train[0:n_training_samples], :]
-    y = y[index_train[0:n_training_samples], :]
-
-    x_train, x_val, y_train, y_val = train_test_split(x, y, test_size=0.1, random_state=1)
+    x_train = x[index_train[0:n_training_samples], :]
+    y_test = y[index_train[0:n_training_samples], :]
 
     x_test = x_test[index_test[0:n_testing_samples], :]
     y_test = y_test[index_test[0:n_testing_samples], :]
@@ -89,13 +87,11 @@ def load_cifar10_data(n_training_samples, n_testing_samples):
     x_train_std = np.std(x_train, axis=0)
     x_train = (x_train - x_train_mean) / x_train_std
     x_test = (x_test - x_train_mean) / x_train_std
-    x_val = (x_val - x_train_mean) / x_train_std
 
     x_train = x_train.reshape(-1, 32 * 32 * 3).astype('float64')
     x_test = x_test.reshape(-1, 32 * 32 * 3).astype('float64')
-    x_val = x_val.reshape(-1, 32 * 32 * 3).astype('float64')
 
-    return x_train, y_train, x_test, y_test, x_val, y_val
+    return x_train, y_train, x_test, y_test
 
 
 def load_cifar10_data_not_flattened(n_training_samples, n_testing_samples):
@@ -115,10 +111,8 @@ def load_cifar10_data_not_flattened(n_training_samples, n_testing_samples):
     index_test = np.arange(x_test.shape[0])
     np.random.shuffle(index_test)
 
-    x = x[index_train[0:n_training_samples], :]
-    y = y[index_train[0:n_training_samples], :]
-
-    x_train, x_val, y_train, y_val = train_test_split(x, y, test_size=0.1, random_state=1)
+    x_train = x[index_train[0:n_training_samples], :]
+    y_train = y[index_train[0:n_training_samples], :]
 
     x_test = x_test[index_test[0:n_testing_samples], :]
     y_test = y_test[index_test[0:n_testing_samples], :]
@@ -128,9 +122,8 @@ def load_cifar10_data_not_flattened(n_training_samples, n_testing_samples):
     x_train_std = np.std(x_train, axis=0)
     x_train = (x_train - x_train_mean) / x_train_std
     x_test = (x_test - x_train_mean) / x_train_std
-    x_val = (x_val - x_train_mean) / x_train_std
 
-    return x_train, y_train, x_test, y_test, x_val, y_val
+    return x_train, y_train, x_test, y_test
 
 def load_images(curr_dir, label):
     print(f"Loading class {label} images ...")

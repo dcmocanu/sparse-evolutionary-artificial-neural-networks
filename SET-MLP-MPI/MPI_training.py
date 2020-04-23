@@ -77,7 +77,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr-rate-decay', type=float, default=0.0, help='learning rate decay (default: 0)')
     parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum (default: 0.5)')
     parser.add_argument('--dropout-rate', type=float, default=0.3, help='Dropout rate')
-    parser.add_argument('--weight-decay', type=float, default=0.0002, help='Dropout rate')
+    parser.add_argument('--weight-decay', type=float, default=0.0000, help='Dropout rate')
     parser.add_argument('--epsilon', type=int, default=20, help='Sparsity level')
     parser.add_argument('--zeta', type=float, default=0.3,
                         help='It gives the percentage of unimportant connections which are removed and replaced with '
@@ -118,12 +118,11 @@ if __name__ == '__main__':
 
     if num_processes == 1:
         # Load dataset
-        X_train, Y_train, X_test, Y_test, X_val, Y_val = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
+        X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
         validate_every = int((X_train.shape[0] // args.batch_size) * num_workers)
         data = Data(batch_size=args.batch_size,
                     x_train=X_train, y_train=Y_train,
-                    x_test=X_test, y_test=Y_test,
-                    x_val=X_val, y_val=Y_val)
+                    x_test=X_test, y_test=Y_test)
     else:
         if rank != 0:
             # Load augmented dataset
@@ -136,29 +135,27 @@ if __name__ == '__main__':
 
             # Load normal dataset
 
-            X_train, Y_train, X_test, Y_test, X_val, Y_val = load_cifar10_data(args.n_training_samples,
+            X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples,
                                                                                args.n_testing_samples)
             validate_every = int((X_train.shape[0] // args.batch_size) * num_workers)
             partitions = shared_partitions(X_train.shape[0], num_workers, args.batch_size)
             data = Data(batch_size=args.batch_size,
                         x_train=X_train[partitions[rank - 1]], y_train=Y_train[partitions[rank - 1]],
-                        x_test=X_test, y_test=Y_test,
-                        x_val=X_val, y_val=Y_val)
+                        x_test=X_test, y_test=Y_test)
 
-            del X_train, Y_train, X_test, Y_test, X_val, Y_val
+            del X_train, Y_train, X_test, Y_test
         else:
             # X_test = np.load('mpi_training/cifar10/x_test.npy', mmap_mode='r')
             # Y_test = np.load('mpi_training/cifar10/y_test.npy', mmap_mode='r')
 
-            X_train, Y_train,  X_test, Y_test, X_val, Y_val = load_cifar10_data(args.n_training_samples,
+            X_train, Y_train,  X_test, Y_test = load_cifar10_data(args.n_training_samples,
                                                                     args.n_testing_samples)
 
             validate_every = int((X_train.shape[0] // args.batch_size) * num_workers)
             data = Data(batch_size=args.batch_size,
                         x_train=X_train, y_train=Y_train,
-                        x_test=X_test, y_test=Y_test,
-                        x_val=X_val, y_val=Y_val)
-            del X_test, Y_test, X_val, Y_val
+                        x_test=X_test, y_test=Y_test)
+            del X_test, Y_test
 
     # Some input arguments may be ignored depending on chosen algorithm
     if args.mode == 'easgd':

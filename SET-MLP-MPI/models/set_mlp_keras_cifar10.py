@@ -69,7 +69,7 @@ class TestCallback(keras.callbacks.Callback):
 
 # Training settings
 parser = argparse.ArgumentParser(description='SET Parallel Training ')
-parser.add_argument('--batch-size', type=int, default=128, metavar='N',
+parser.add_argument('--batch-size', type=int, default=100, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=3000, metavar='N',
                     help='input batch size for testing (default: 1000)')
@@ -83,7 +83,7 @@ parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                     help='SGD momentum (default: 0.9)')
 parser.add_argument('--dropout-rate', type=float, default=0.3, metavar='D',
                     help='Dropout rate')
-parser.add_argument('--weight-decay', type=float, default=0.0002, metavar='W',
+parser.add_argument('--weight-decay', type=float, default=0.0000, metavar='W',
                     help='Dropout rate')
 parser.add_argument('--epsilon', type=int, default=20, metavar='E',
                     help='Sparsity level')
@@ -96,9 +96,9 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
-parser.add_argument('--n-training-samples', type=int, default=5000, metavar='N',
+parser.add_argument('--n-training-samples', type=int, default=50000, metavar='N',
                     help='Number of training samples')
-parser.add_argument('--n-testing-samples', type=int, default=1000, metavar='N',
+parser.add_argument('--n-testing-samples', type=int, default=10000, metavar='N',
                     help='Number of testing samples')
 parser.add_argument('--n-validation-samples', type=int, default=10000, help='Number of validation samples')
 parser.add_argument('--n-processes', type=int, default=6, metavar='N',
@@ -154,7 +154,7 @@ class SET_MLP_CIFAR10:
         # set model parameters
         self.epsilon = 20 # control the sparsity level as discussed in the paper
         self.zeta = 0.3 # the fraction of the weights removed
-        self.batch_size = 128 # batch size
+        self.batch_size = 100 # batch size
         self.maxepoches = 500 # number of epochs
         self.learning_rate = 0.01 # SGD learning rate
         self.num_classes = 10 # number of classes
@@ -198,7 +198,7 @@ class SET_MLP_CIFAR10:
         self.model.add(ReLU(name="srelu3",weights=self.wSRelu3))
         self.model.add(Dropout(0.3))
         self.model.add(Dense(self.num_classes, name="dense_4", weights=self.w4)) #please note that there is no need for a sparse output layer as the number of classes is much smaller than the number of input hidden neurons
-        self.model.add(Activation('sigmoid'))
+        self.model.add(Activation('softmax'))
 
     def rewireMask(self, weights, noWeights):
         # rewire weight matrix
@@ -290,7 +290,7 @@ class SET_MLP_CIFAR10:
 
         self.accuracies_per_epoch=np.asarray(self.accuracies_per_epoch)
 
-    def fit(self, x, y_true, x_test, y_test, x_val, y_val, batch_size=128, testing=True, save_filename=""):
+    def fit(self, x, y_true, x_test, y_test, batch_size=100, testing=True, save_filename=""):
 
         self.model.summary()
 
@@ -298,7 +298,7 @@ class SET_MLP_CIFAR10:
         self.accuracies_per_epoch = []
         for epoch in range(0, self.maxepoches):
             sgd = optimizers.SGD(lr=self.learning_rate, momentum=self.momentum)
-            self.model.compile(loss='mean_squared_error', optimizer=sgd, metrics=['accuracy'])
+            self.model.compile(loss='categorical_crossentropy', optimizer=sgd, metrics=['accuracy'])
 
             # Shuffle the data
             seed = np.arange(x.shape[0])
@@ -320,14 +320,11 @@ class SET_MLP_CIFAR10:
             t1 = datetime.datetime.now()
             result_test = model.model.evaluate(x=x_test, y=y_test, verbose=0)
             print("Metrics test: ", result_test)
-            result_val = model.model.evaluate(x=x_val, y=y_val, verbose=0)
-            print("Metrics val: ", result_val)
             result_train = model.model.evaluate(x=x, y=y_true, verbose=0)
             print("Metrics train: ", result_train)
             t2 = datetime.datetime.now()
             print("Testing time: ", t2 - t1)
             self.accuracies_per_epoch.append((result_train[0], result_train[1],
-                                              result_val[0], result_val[1],
                                               result_test[0], result_test[1]))
 
              #ugly hack to avoid tensorflow memory increase for multiple fit_generator calls. Theano shall work more nicely this but it is outdated in general
@@ -394,13 +391,13 @@ if __name__ == '__main__':
             'loss': 'mse'
         }
     np.random.seed(0)
-    X_train, Y_train, X_test, Y_test, X_val, Y_val = load_cifar10_data_not_flattened(args.n_training_samples, args.n_testing_samples)
+    X_train, Y_train, X_test, Y_test = load_cifar10_data_not_flattened(args.n_training_samples, args.n_testing_samples)
 
     # create and run a SET-MLP model on CIFAR10
     model=SET_MLP_CIFAR10()
 
     start_time = time.time()
-    model.fit(X_train, Y_train, X_test, Y_test, X_val, Y_val, batch_size, testing=True,
+    model.fit(X_train, Y_train, X_test, Y_test, batch_size, testing=True,
                 save_filename="../Results/set_mlp_sequential" + str(n_training_samples) + "_training_samples_e" + str(
                     epsilon) + "_rand" + str(0))
     step_time = time.time() - start_time

@@ -14,13 +14,11 @@ class Data(object):
           batch_size: size of training batches
     """
 
-    def __init__(self, x_train, y_train, x_test, y_test, x_val, y_val, batch_size):
+    def __init__(self, x_train, y_train, x_test, y_test, batch_size):
         self.x_train = x_train
         self.y_train = y_train
         self.x_test = x_test
         self.y_test = y_test
-        self.x_val = x_val
-        self.y_val = y_val
         self.batch_size = batch_size
 
     def inf_generate_data(self):
@@ -46,14 +44,6 @@ class Data(object):
             end_pos = (j + 1) * self.batch_size
 
             yield self.x_test[start_pos:end_pos], self.y_test[start_pos:end_pos]
-
-    def generate_validation_data(self):
-        """Yields batches of training data until none are left."""
-        for j in range(self.x_val.shape[0] // self.batch_size):
-            start_pos = j * self.batch_size
-            end_pos = (j + 1) * self.batch_size
-
-            yield self.x_val[start_pos:end_pos], self.y_val[start_pos:end_pos]
 
     def count_data(self):
         return self.x_train.shape[0]

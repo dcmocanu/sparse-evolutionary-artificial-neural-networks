@@ -486,23 +486,19 @@ class MPIWorker(MPIProcess):
             if testing:
                 t3 = datetime.datetime.now()
                 accuracy_test, activations_test = self.model.predict(self.data.x_test, self.data.y_test)
-                accuracy_val, activations_val = self.model.predict(self.data.x_val, self.data.y_val)
                 accuracy_train, activations_train = self.model.predict(self.data.x_train, self.data.y_train)
                 t4 = datetime.datetime.now()
-                maximum_accuracy = max(maximum_accuracy, accuracy_val)
+                maximum_accuracy = max(maximum_accuracy, accuracy_test)
                 loss_test = self.model.compute_loss(self.data.y_test, activations_test)
-                loss_val = self.model.compute_loss(self.data.y_val, activations_val)
                 loss_train = self.model.compute_loss(self.data.y_train, activations_train)
                 metrics[epoch - 1, 0] = loss_train
-                metrics[epoch - 1, 1] = loss_val
-                metrics[epoch - 1, 2] = loss_test
-                metrics[epoch - 1, 3] = accuracy_train
-                metrics[epoch - 1, 4] = accuracy_val
-                metrics[epoch - 1, 5] = accuracy_test
+                metrics[epoch - 1, 1] = loss_test
+                metrics[epoch - 1, 2] = accuracy_train
+                metrics[epoch - 1, 3] = accuracy_test
 
                 self.logger.debug("Validation metrics:")
-                self.logger.debug(f"Testing time: {t4 - t3}\n; Loss val: {loss_val}; Loss test: {loss_test}; \n"
-                                  f"Accuracy val: {accuracy_val}; Accuracy test: {accuracy_test}; \n"
+                self.logger.debug(f"Testing time: {t4 - t3}\n; Loss test: {loss_test}; \n"
+                                  f"Accuracy test: {accuracy_test}; \n"
                                   f"Maximum accuracy val: {maximum_accuracy}")
                 # save performance metrics values in a file
                 if (self.save_filename != ""):
@@ -566,7 +562,7 @@ class MPIMaster(MPIProcess):
         self.biases_to_save = []
 
         self.num_workers = child_comm.Get_size() - 1  # all processes but one are workers
-        self.metrics = np.zeros((num_epochs // self.num_workers + 1, 6))
+        self.metrics = np.zeros((num_epochs // self.num_workers + 1, 4))
 
         self.num_sync_workers = num_sync_workers
         info = ("Creating MPIMaster with rank {0} and parent rank {1}. "
@@ -665,18 +661,10 @@ class MPIMaster(MPIProcess):
                             self.validate(self.weights)
                             if self.epoch < self.num_epochs//self.num_workers - 1:
                                 t5 = datetime.datetime.now()
-                                self.logger.info(self.weights['w'][1].count_nonzero())
-                                self.logger.info(self.weights['w'][2].count_nonzero())
-                                self.logger.info(self.weights['w'][3].count_nonzero())
-                                self.logger.info(self.weights['w'][4].count_nonzero())
                                 self.model.weight_evolution()
                                 t6 = datetime.datetime.now()
                                 self.logger.info(f"Weights evolution time  {t6 - t5}")
                                 self.weights = self.model.get_weights()
-                                self.logger.info(self.weights['w'][1].count_nonzero())
-                                self.logger.info(self.weights['w'][2].count_nonzero())
-                                self.logger.info(self.weights['w'][3].count_nonzero())
-                                self.logger.info(self.weights['w'][4].count_nonzero())
 
                             self.logger.info(f"Master epoch {self.epoch+1}")
 
@@ -808,23 +796,19 @@ class MPIMaster(MPIProcess):
         self.logger.debug("Starting validation")
         t3 = datetime.datetime.now()
         accuracy_test, activations_test = self.model.predict(self.data.x_test, self.data.y_test)
-        accuracy_val, activations_val = self.model.predict(self.data.x_val, self.data.y_val)
         accuracy_train, activations_train = self.model.predict(self.data.x_train, self.data.y_train)
         t4 = datetime.datetime.now()
-        self.best_val_acc = max(self.best_val_acc , accuracy_val)
+        self.best_val_acc = max(self.best_val_acc , accuracy_test)
         loss_test = self.model.compute_loss(self.data.y_test, activations_test)
-        loss_val = self.model.compute_loss(self.data.y_val, activations_val)
         loss_train = self.model.compute_loss(self.data.y_train, activations_train)
         self.metrics[self.epoch-1, 0] = loss_train
-        self.metrics[self.epoch-1, 1] = loss_val
-        self.metrics[self.epoch-1, 2] = loss_test
-        self.metrics[self.epoch-1, 3] = accuracy_train
-        self.metrics[self.epoch-1, 4] = accuracy_val
-        self.metrics[self.epoch-1, 5] = accuracy_test
+        self.metrics[self.epoch-1, 1] = loss_test
+        self.metrics[self.epoch-1, 2] = accuracy_train
+        self.metrics[self.epoch-1, 3] = accuracy_test
 
         self.logger.info("Validation metrics:")
-        self.logger.info(f"Testing time: {t4 - t3}\n; Loss val: {loss_val}; Loss test: {loss_test}; \n"
-                          f"Accuracy val: {accuracy_val}; Accuracy test: {accuracy_test}; \n"
+        self.logger.info(f"Testing time: {t4 - t3}\n; Loss test: {loss_test}; \n"
+                          f" Accuracy test: {accuracy_test}; \n"
                           f"Maximum accuracy val: {self.best_val_acc}")
 
         # save performance metrics values in a file

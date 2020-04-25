@@ -185,10 +185,14 @@ class SET_MLP:
         self.pdw = params['pdw']
         self.pdd = params['pdd']
 
-    def dropout(self, x, level):
+    def dropout(self, x, rate):
+
         noise_shape = x.shape
-        noise = np.random.choice([0, 1], noise_shape, replace=True, p=[level, 1 - level])
-        return x * noise / (1 - level)
+        noise = np.random.uniform(0., 1., noise_shape)
+        keep_prob = 1. - rate
+        scale = 1 / keep_prob
+        keep_mask = noise >= rate
+        return x * scale * keep_mask.astype('float64'), keep_mask.astype('float64')
 
     def _feed_forward(self, x, drop=True):
         """
@@ -202,17 +206,19 @@ class SET_MLP:
 
         # activations: f(z)
         a = {1: x}  # First layer has no activations as input. The input x is the input.
+        masks = {1: x}
 
         for i in range(1, self.n_layers):
             z[i + 1] = a[i] @ self.w[i] + self.b[i]
             a[i + 1] = self.activations[i + 1].activation(z[i + 1])
             if drop:
-                if self.n_layers - 1 > i > 0:
-                    a[i + 1] = self.dropout(a[i + 1], self.dropout_rate)
+                if i < self.n_layers - 1:
+                    a[i + 1], keep_mask = self.dropout(a[i + 1], self.dropout_rate)
+                    masks[i + 1] = keep_mask
 
-        return z, a
+        return z, a, masks
 
-    def _back_prop(self, z, a, y_true):
+    def _back_prop(self, z, a, masks, y_true):
         """
         The input dicts keys represent the layers of the net.
 
@@ -228,6 +234,9 @@ class SET_MLP:
         :param y_true: (array) One hot encoded truth vector.
         :return:
         """
+        keep_prob = 1.
+        if self.dropout_rate > 0:
+            keep_prob = 1. - self.dropout_rate
 
         # Determine partial derivative and delta for the output layer.
         # delta output layer
@@ -240,14 +249,20 @@ class SET_MLP:
         # backpropagation_updates_Numpy(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
 
         update_params = {
-            self.n_layers - 1: (dw.tocsr(), np.sum(delta, axis=0) / self.batch_size)
+            self.n_layers - 1: (dw.tocsr(), np.mean(delta, axis=0))
         }
 
         # In case of three layer net will iterate over i = 2 and i = 1
         # Determine partial derivative and delta for the rest of the layers.
         # Each iteration requires the delta from the previous layer, propagating backwards.
         for i in reversed(range(2, self.n_layers)):
-            delta = (delta @ self.w[i].transpose()) * self.activations[i].prime(z[i])
+            if keep_prob != 1:
+                d = (delta @ self.w[i].transpose()) * masks[i]
+                d /= keep_prob
+                delta = d * self.activations[i].prime(z[i])
+            else:
+                delta = (delta @ self.w[i].transpose()) * self.activations[i].prime(z[i])
+
             dw = coo_matrix(self.w[i - 1])
 
             # compute backpropagation updates
@@ -255,7 +270,7 @@ class SET_MLP:
             # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above. Please note that the running time will be much higher
             # backpropagation_updates_Numpy(a[i - 1], delta, dw.row, dw.col, dw.data)
 
-            update_params[i - 1] = (dw.tocsr(), np.sum(delta, axis=0) / self.batch_size)
+            update_params[i - 1] = (dw.tocsr(), np.mean(delta, axis=0))
         for k, v in update_params.items():
             self._update_w_b(k, v[0], v[1])
 
@@ -324,9 +339,9 @@ class SET_MLP:
             for j in range(x.shape[0] // batch_size):
                 k = j * batch_size
                 l = (j + 1) * batch_size
-                z, a = self._feed_forward(x_[k:l], True)
+                z, a, masks = self._feed_forward(x_[k:l], True)
 
-                self._back_prop(z, a, y_[k:l])
+                self._back_prop(z, a, masks,  y_[k:l])
 
             t2 = datetime.datetime.now()
 
@@ -537,7 +552,7 @@ class SET_MLP:
         for j in range(x_test.shape[0] // batch_size):
             k = j * batch_size
             l = (j + 1) * batch_size
-            _, a_test = self._feed_forward(x_test[k:l], drop=False)
+            _, a_test, _ = self._feed_forward(x_test[k:l], drop=False)
             activations[k:l] = a_test[self.n_layers]
         correct_classification = 0
         for j in range(y_test.shape[0]):

@@ -36,6 +36,7 @@
 from scipy.sparse import lil_matrix
 from scipy.sparse import coo_matrix
 from scipy.sparse import dok_matrix
+from scipy.sparse import csr_matrix
 from models.nn_functions import *
 # the "sparseoperations" Cython library was tested in Ubuntu 16.04. Please note that you may encounter some "solvable" issues if you compile it in Windows.
 import sparseoperations
@@ -68,10 +69,14 @@ def find_last_pos(array, value):
 
 
 def createSparseWeights(epsilon, noRows, noCols):
+    limit = np.sqrt(6. / float(noRows + noCols))
+
+    mask_weights = np.random.rand(noRows, noCols)
+    prob = 1 - (epsilon * (noRows + noCols)) / (noRows * noCols)  # normal tp have 8x connections
     # generate an Erdos Renyi sparse weights mask
     weights = lil_matrix((noRows, noCols))
-    for i in range(epsilon * (noRows + noCols)):
-        weights[np.random.randint(0, noRows), np.random.randint(0, noCols)] = np.float64(np.random.randn() / 10)
+    n_params = np.count_nonzero(mask_weights[mask_weights >= prob])
+    weights[mask_weights >= prob] = np.random.uniform(-limit, limit, n_params)
     # print("Create sparse matrix with ", weights.getnnz(), " connections and ",
     #       (weights.getnnz() / (noRows * noCols)) * 100, "% density level")
     weights = weights.tocsr()
@@ -125,10 +130,16 @@ class SET_MLP:
 
         # t1 = datetime.datetime.now()
 
-        for i in range(len(dimensions) - 1):
-            self.w[i + 1] = createSparseWeights(self.epsilon, dimensions[i], dimensions[i + 1]) #create sparse weight matrices
+        for i in range(len(dimensions) - 2):
+            self.w[i + 1] = createSparseWeights(self.epsilon, dimensions[i], dimensions[i + 1])  #create sparse weight matrices
             self.b[i + 1] = np.zeros(dimensions[i + 1])
             self.activations[i + 2] = activations[i]
+
+        limit = np.sqrt(6. / float(dimensions[-2] + dimensions[-1]))
+        self.w[len(dimensions) - 1] = csr_matrix(np.random.uniform(-limit, limit,
+                                                                   (dimensions[-2], dimensions[-1])))
+        self.b[len(dimensions) - 1] = np.zeros(dimensions[-1])
+        self.activations[len(dimensions)] = activations[-1]
 
         # with  ProcessPoolExecutor() as executor:
         #     # Activations are also initiated by index. For the example we will have activations[2] and activations[3]
@@ -174,6 +185,11 @@ class SET_MLP:
         self.pdw = params['pdw']
         self.pdd = params['pdd']
 
+    def dropout(self, x, level):
+        noise_shape = x.shape
+        noise = np.random.choice([0, 1], noise_shape, replace=True, p=[level, 1 - level])
+        return x * noise / (1 - level)
+
     def _feed_forward(self, x, drop=True):
         """
         Execute a forward feed through the network.
@@ -189,16 +205,10 @@ class SET_MLP:
 
         for i in range(1, self.n_layers):
             z[i + 1] = a[i] @ self.w[i] + self.b[i]
-            if (drop == False):
-                if (i > 1):
-                    z[i + 1] = z[i + 1] * (1 - self.dropout_rate)
             a[i + 1] = self.activations[i + 1].activation(z[i + 1])
-            if (drop):
-                if (i < self.n_layers - 1):
-                    dropMask = np.random.rand(a[i + 1].shape[0], a[i + 1].shape[1])
-                    dropMask[dropMask >= self.dropout_rate] = 1
-                    dropMask[dropMask < self.dropout_rate] = 0
-                    a[i + 1] = dropMask * a[i + 1]
+            if drop:
+                if self.n_layers - 1 > i > 0:
+                    a[i + 1] = self.dropout(a[i + 1], self.dropout_rate)
 
         return z, a
 
@@ -225,11 +235,12 @@ class SET_MLP:
         dw = coo_matrix(self.w[self.n_layers - 1])
         # compute backpropagation updates
         sparseoperations.backpropagation_updates_Cython(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
+
         # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above. Please note that the running time will be much higher
         # backpropagation_updates_Numpy(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
 
         update_params = {
-            self.n_layers - 1: (dw.tocsr(), delta)
+            self.n_layers - 1: (dw.tocsr(), np.sum(delta, axis=0) / self.batch_size)
         }
 
         # In case of three layer net will iterate over i = 2 and i = 1
@@ -244,7 +255,7 @@ class SET_MLP:
             # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above. Please note that the running time will be much higher
             # backpropagation_updates_Numpy(a[i - 1], delta, dw.row, dw.col, dw.data)
 
-            update_params[i - 1] = (dw.tocsr(), delta)
+            update_params[i - 1] = (dw.tocsr(), np.sum(delta, axis=0) / self.batch_size)
         for k, v in update_params.items():
             self._update_w_b(k, v[0], v[1])
 
@@ -259,11 +270,11 @@ class SET_MLP:
 
         # perform the update with momentum
         if (index not in self.pdw):
-            self.pdw[index] = -self.learning_rate * dw
-            self.pdd[index] = - self.learning_rate * np.mean(delta, 0)
+            self.pdw[index] = - self.learning_rate * dw
+            self.pdd[index] = - self.learning_rate * delta
         else:
             self.pdw[index] = self.momentum * self.pdw[index] - self.learning_rate * dw
-            self.pdd[index] = self.momentum * self.pdd[index] - self.learning_rate * np.mean(delta, 0)
+            self.pdd[index] = self.momentum * self.pdd[index] - self.learning_rate * delta
 
         self.w[index] += self.pdw[index] - self.weight_decay * self.w[index]
         self.b[index] += self.pdd[index] - self.weight_decay * self.b[index]
@@ -334,7 +345,7 @@ class SET_MLP:
                 loss_test = self.loss.loss(y_test, activations_test)
                 loss_train = self.loss.loss(y_true, activations_train)
                 metrics[i, 0] = loss_train
-                metrics[i - 1, 2] = loss_test
+                metrics[i, 1] = loss_test
                 metrics[i, 2] = accuracy_train
                 metrics[i, 3] = accuracy_test
 
@@ -342,12 +353,10 @@ class SET_MLP:
                                  f"Accuracy test: {accuracy_test}; \n"
                                  f"Maximum accuracy val: {maximum_accuracy}")
 
-            t5 = datetime.datetime.now()
             weights.append(self.w)
             biases.append(self.b)
 
-            np.savez_compressed(self.save_filename + "_weights.npz", *weights)
-            np.savez_compressed(self.save_filename + "_biases.npz", *biases)
+            t5 = datetime.datetime.now()
             if (i < self.epochs - 1):  # do not change connectivity pattern after the last epoch
 
                 # self.weightsEvolution_I() # this implementation is more didactic, but slow.
@@ -355,9 +364,17 @@ class SET_MLP:
             t6 = datetime.datetime.now()
             print("Weights evolution time ", t6 - t5)
 
+            print(self.w[1].count_nonzero())
+            print(self.w[2].count_nonzero())
+            print(self.w[3].count_nonzero())
+            print(self.w[4].count_nonzero())
+
             # save performance metrics values in a file
             if (self.save_filename != ""):
                 np.savetxt(self.save_filename+".txt", metrics)
+
+        np.savez_compressed(self.save_filename + "_weights.npz", *weights)
+        np.savez_compressed(self.save_filename + "_biases.npz", *biases)
 
         return metrics
 
@@ -424,7 +441,7 @@ class SET_MLP:
     def weightsEvolution_II(self):
         # this represents the core of the SET procedure. It removes the weights closest to zero in each layer and add new random weights
         #evolve all layers, except the one from the last hidden layer to the output layer
-        for i in range(1, self.n_layers):
+        for i in range(1, self.n_layers - 1):
             # uncomment line below to stop evolution of dense weights more than 80% non-zeros
             #if(self.w[i].count_nonzero()/(self.w[i].get_shape()[0]*self.w[i].get_shape()[1]) < 0.8):
                 t_ev_1 = datetime.datetime.now()
@@ -478,8 +495,8 @@ class SET_MLP:
 
                 # adding  (wdok[ik,jk]!=0): condition
                 while (lengthRandom > 0):
-                    ik = np.random.randint(0, self.dimensions[i - 1], size=lengthRandom, dtype='int32')
-                    jk = np.random.randint(0, self.dimensions[i], size=lengthRandom, dtype='int32')
+                    ik = np.random.randint(0, self.dimensions[i - 1], size=lengthRandom)
+                    jk = np.random.randint(0, self.dimensions[i], size=lengthRandom)
 
                     randomWRowColIndex = np.stack((ik, jk), axis=-1)
                     randomWRowColIndex = np.unique(randomWRowColIndex, axis=0)  # removing duplicates in new rows&cols
@@ -520,7 +537,7 @@ class SET_MLP:
         for j in range(x_test.shape[0] // batch_size):
             k = j * batch_size
             l = (j + 1) * batch_size
-            _, a_test = self._feed_forward(x_test[k:l])
+            _, a_test = self._feed_forward(x_test[k:l], drop=False)
             activations[k:l] = a_test[self.n_layers]
         correct_classification = 0
         for j in range(y_test.shape[0]):

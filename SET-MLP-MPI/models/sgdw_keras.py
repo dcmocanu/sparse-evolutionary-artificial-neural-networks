@@ -19,12 +19,12 @@ class SGDW(Optimizer):
         - [Fixing Weight Decay Regularization in Adam](https://arxiv.org/abs/1711.05101)
     """
 
-    def __init__(self, lr=0.01, momentum=0.9, decay=0., weight_decay=2e-4, # decoupled weight decay (1/4)
+    def __init__(self, learning_rate=0.01, momentum=0.9, decay=0., weight_decay=2e-4, # decoupled weight decay (1/4)
                  nesterov=False, **kwargs):
         super(SGDW, self).__init__(**kwargs)
         with K.name_scope(self.__class__.__name__):
             self.iterations = K.variable(0, dtype='int64', name='iterations')
-            self.lr = K.variable(lr, name='lr')
+            self.learning_rate = K.variable(learning_rate, name='learning_rate')
             self.momentum = K.variable(momentum, name='momentum')
             self.decay = K.variable(decay, name='decay')
             self.wd = K.variable(weight_decay, name='weight_decay') # decoupled weight decay (2/4)

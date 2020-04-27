@@ -77,8 +77,8 @@ def createSparseWeights(epsilon, noRows, noCols):
     weights = lil_matrix((noRows, noCols))
     n_params = np.count_nonzero(mask_weights[mask_weights >= prob])
     weights[mask_weights >= prob] = np.random.uniform(-limit, limit, n_params)
-    # print("Create sparse matrix with ", weights.getnnz(), " connections and ",
-    #       (weights.getnnz() / (noRows * noCols)) * 100, "% density level")
+    print("Create sparse matrix with ", weights.getnnz(), " connections and ",
+           (weights.getnnz() / (noRows * noCols)) * 100, "% density level")
     weights = weights.tocsr()
     return weights
 
@@ -128,8 +128,6 @@ class SET_MLP:
         self.pdd = {}
         self.activations = {}
 
-        # t1 = datetime.datetime.now()
-
         for i in range(len(dimensions) - 2):
             self.w[i + 1] = createSparseWeights(self.epsilon, dimensions[i], dimensions[i + 1])  #create sparse weight matrices
             self.b[i + 1] = np.zeros(dimensions[i + 1])
@@ -141,22 +139,6 @@ class SET_MLP:
         self.b[len(dimensions) - 1] = np.zeros(dimensions[-1])
         self.activations[len(dimensions)] = activations[-1]
 
-        # with  ProcessPoolExecutor() as executor:
-        #     # Activations are also initiated by index. For the example we will have activations[2] and activations[3]
-        #     self.activations = {}
-        #     noRows = dimensions[:-1]
-        #     noCols = dimensions[1:]
-        #
-        #     # create sparse weight matrices
-        #
-        #     results = executor.map(createSparseWeights, [epsilon] * len(noCols), noRows, noCols)
-        #     for i, res in enumerate(results):
-        #         self.w[i + 1] = res
-        #         self.b[i + 1] = np.zeros(dimensions[i + 1])
-        #         self.activations[i + 2] = activations[i]
-        # t2 = datetime.datetime.now()
-
-        # print("Creation sparse weights time: ", t2 - t1)
         if config['loss'] == 'mse':
             self.loss = MSE(self.activations[self.n_layers])
         elif config['loss'] == 'cross_entropy':
@@ -249,17 +231,18 @@ class SET_MLP:
         # backpropagation_updates_Numpy(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
 
         update_params = {
-            self.n_layers - 1: (dw.tocsr(), np.mean(delta, axis=0))
+            self.n_layers - 1: (dw.tocsr(),  np.sum(delta, axis=0) / self.batch_size)
         }
 
         # In case of three layer net will iterate over i = 2 and i = 1
         # Determine partial derivative and delta for the rest of the layers.
         # Each iteration requires the delta from the previous layer, propagating backwards.
         for i in reversed(range(2, self.n_layers)):
+
             if keep_prob != 1:
-                d = (delta @ self.w[i].transpose()) * masks[i]
-                d /= keep_prob
-                delta = d * self.activations[i].prime(z[i])
+                delta = (delta @ self.w[i].transpose()) * self.activations[i].prime(z[i])
+                delta = delta * masks[i]
+                delta /= keep_prob
             else:
                 delta = (delta @ self.w[i].transpose()) * self.activations[i].prime(z[i])
 
@@ -270,7 +253,7 @@ class SET_MLP:
             # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above. Please note that the running time will be much higher
             # backpropagation_updates_Numpy(a[i - 1], delta, dw.row, dw.col, dw.data)
 
-            update_params[i - 1] = (dw.tocsr(), np.mean(delta, axis=0))
+            update_params[i - 1] = (dw.tocsr(),  np.sum(delta, axis=0) / self.batch_size)
         for k, v in update_params.items():
             self._update_w_b(k, v[0], v[1])
 
@@ -291,8 +274,8 @@ class SET_MLP:
             self.pdw[index] = self.momentum * self.pdw[index] - self.learning_rate * dw
             self.pdd[index] = self.momentum * self.pdd[index] - self.learning_rate * delta
 
-        self.w[index] += self.pdw[index] - self.weight_decay * self.w[index]
-        self.b[index] += self.pdd[index] - self.weight_decay * self.b[index]
+        self.w[index] += self.pdw[index] # - self.weight_decay * self.w[index]
+        self.b[index] += self.pdd[index] # - self.weight_decay * self.b[index]
 
     def train_on_batch(self, x, y):
         z, a, masks = self._feed_forward(x, True)
@@ -304,7 +287,7 @@ class SET_MLP:
         accuracy, activations = self.predict(x, y)
         return self.loss.loss(y, activations), accuracy
 
-    def fit(self, x, y_true, x_test, y_test, batch_size=100, testing=True, save_filename=""):
+    def fit(self, x, y_true, x_test, y_test, testing=True, save_filename=""):
         """
         :param x: (array) Containing parameters
         :param y_true: (array) Containing one hot encoded labels.
@@ -336,9 +319,9 @@ class SET_MLP:
             # training
             t1 = datetime.datetime.now()
 
-            for j in range(x.shape[0] // batch_size):
-                k = j * batch_size
-                l = (j + 1) * batch_size
+            for j in range(x.shape[0] // self.batch_size):
+                k = j * self.batch_size
+                l = (j + 1) * self.batch_size
                 z, a, masks = self._feed_forward(x_[k:l], True)
 
                 self._back_prop(z, a, masks,  y_[k:l])
@@ -466,10 +449,6 @@ class SET_MLP:
                 rowsW = wcoo.row
                 colsW = wcoo.col
 
-                pdcoo = self.pdw[i].tocoo()
-                valsPD = pdcoo.data
-                rowsPD = pdcoo.row
-                colsPD = pdcoo.col
                 # print("Number of non zeros in W and PD matrix before evolution in layer",i,[np.size(valsW), np.size(valsPD)])
                 values = np.sort(self.w[i].data)
                 firstZeroPos = find_first_pos(values, 0)
@@ -484,17 +463,14 @@ class SET_MLP:
                 rowsWNew = rowsW[(valsW > smallestPositive) | (valsW < largestNegative)]
                 colsWNew = colsW[(valsW > smallestPositive) | (valsW < largestNegative)]
 
-                newWRowColIndex = np.stack((rowsWNew, colsWNew), axis=-1)
-                oldPDRowColIndex = np.stack((rowsPD, colsPD), axis=-1)
+                # newWRowColIndex = np.stack((rowsWNew, colsWNew), axis=-1)
+                # oldPDRowColIndex = np.stack((rowsPD, colsPD), axis=-1)
 
-                newPDRowColIndexFlag = array_intersect(oldPDRowColIndex, newWRowColIndex)  # careful about order
+                # newPDRowColIndexFlag = array_intersect(oldPDRowColIndex, newWRowColIndex)  # careful about order
 
-                valsPDNew = valsPD[newPDRowColIndexFlag]
-                rowsPDNew = rowsPD[newPDRowColIndexFlag]
-                colsPDNew = colsPD[newPDRowColIndexFlag]
-
-                self.pdw[i] = coo_matrix((valsPDNew, (rowsPDNew, colsPDNew)),
-                                         (self.dimensions[i - 1], self.dimensions[i])).tocsr()
+                # valsPDNew = valsPD[newPDRowColIndexFlag]
+                # rowsPDNew = rowsPD[newPDRowColIndexFlag]
+                # colsPDNew = colsPD[newPDRowColIndexFlag]
 
                 # if(i==1):
                 #     self.inputLayerConnections.append(coo_matrix((valsWNew, (rowsWNew, colsWNew)),
@@ -507,7 +483,7 @@ class SET_MLP:
                 lengthRandom = valsW.shape[0] - keepConnections
                 limit = np.sqrt(6. / float(self.dimensions[i] + self.dimensions[i + 1]))
                 randomVals = np.random.uniform(-limit, limit, lengthRandom)
-                # randomVals = np.random.randn(lengthRandom) / 10
+                # randomVals = np.zeros(lengthRandom)
                 zeroVals = 0 * randomVals  # explicit zeros
 
                 # adding  (wdok[ik,jk]!=0): condition
@@ -541,6 +517,9 @@ class SET_MLP:
 
                 # t_ev_2 = datetime.datetime.now()
                 # print("Weights evolution time for layer",i,"is", t_ev_2 - t_ev_1)
+
+        self.pdw = {}
+        self.pdd = {}
 
     def predict(self, x_test, y_test, batch_size=1):
         """

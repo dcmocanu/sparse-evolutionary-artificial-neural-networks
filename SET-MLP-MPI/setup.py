@@ -7,6 +7,6 @@ from Cython.Build import cythonize
 import numpy
 
 setup(
-    ext_modules=cythonize(["sparseoperations.pyx"], annotate=True),
+    ext_modules=cythonize(["sparse_operations/sparseoperations.pyx"], annotate=True),
     include_dirs=[numpy.get_include()]
 )

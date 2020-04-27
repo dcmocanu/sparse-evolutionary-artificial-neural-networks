@@ -416,7 +416,7 @@ class SET_MLP:
 
     def weightsEvolution_I(self):
         # this represents the core of the SET procedure. It removes the weights closest to zero in each layer and add new random weights
-        for i in range(1, self.n_layers):
+        for i in range(1, self.n_layers - 1):
 
             values = np.sort(self.w[i].data)
             firstZeroPos = find_first_pos(values, 0)
@@ -439,7 +439,7 @@ class SET_MLP:
                         wdok[ik, jk] = val
                         pdwdok[ik, jk] = pdwlil[ik, jk]
                         keepConnections += 1
-
+            limit = np.sqrt(6. / float(self.dimensions[i] + self.dimensions[i + 1]))
             # add new random connections
             for kk in range(self.w[i].data.shape[0] - keepConnections):
                 ik = np.random.randint(0, self.dimensions[i - 1])
@@ -447,7 +447,7 @@ class SET_MLP:
                 while (wdok[ik, jk] != 0):
                     ik = np.random.randint(0, self.dimensions[i - 1])
                     jk = np.random.randint(0, self.dimensions[i])
-                wdok[ik, jk] = np.random.randn() / 10
+                wdok[ik, jk] = np.random.uniform(-limit, limit)
                 pdwdok[ik, jk] = 0
 
             self.pdw[i] = pdwdok.tocsr()
@@ -507,7 +507,7 @@ class SET_MLP:
                 lengthRandom = valsW.shape[0] - keepConnections
                 limit = np.sqrt(6. / float(self.dimensions[i] + self.dimensions[i + 1]))
                 randomVals = np.random.uniform(-limit, limit, lengthRandom)
-                #randomVals = np.random.randn(lengthRandom) / 10
+                # randomVals = np.random.randn(lengthRandom) / 10
                 zeroVals = 0 * randomVals  # explicit zeros
 
                 # adding  (wdok[ik,jk]!=0): condition

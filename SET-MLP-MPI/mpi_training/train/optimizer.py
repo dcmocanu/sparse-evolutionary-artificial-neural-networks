@@ -36,7 +36,7 @@ class VanillaSGD(Optimizer):
 
             dw = retain_valid_updates(weights['w'][index], dw)
             weights['pdw'][index] = - self.learning_rate * dw
-            weights['pdd'][index] = - self.learning_rate * np.mean(delta, 0)
+            weights['pdd'][index] = - self.learning_rate * delta
 
             weights['w'][index] += weights['pdw'][index]
             weights['b'][index] += weights['pdd'][index]
@@ -65,11 +65,11 @@ class MomentumSGD(Optimizer):
             # perform the update with momentum
             if index not in weights['pdw']:
                 weights['pdw'][index] = - self.learning_rate * dw
-                weights['pdd'][index] = - self.learning_rate * np.mean(delta, 0)
+                weights['pdd'][index] = - self.learning_rate * delta
             else:
                 dw = retain_valid_updates(weights['w'][index], dw)
                 weights['pdw'][index] = self.momentum * weights['pdw'][index] - self.learning_rate * dw
-                weights['pdd'][index] = self.momentum * weights['pdd'][index] - self.learning_rate * np.mean(delta, 0)
+                weights['pdd'][index] = self.momentum * weights['pdd'][index] - self.learning_rate * delta
 
             weights['w'][index] += weights['pdw'][index] - self.weight_decay * weights['w'][index]
             weights['b'][index] += weights['pdd'][index] - self.weight_decay * weights['b'][index]

@@ -86,14 +86,14 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=0, help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=10,
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--n-training-samples', type=int, default=50000, help='Number of training samples')
+    parser.add_argument('--n-training-samples', type=int, default=60000, help='Number of training samples')
     parser.add_argument('--n-testing-samples', type=int, default=10000, help='Number of testing samples')
 
     args = parser.parse_args()
 
     # Initialize logger
-    log_file = "Results/set_mlp_" + str(args.n_training_samples) + "_training_samples_e" + \
-                    str(args.epsilon) + "_rand" + str(1) + "_logs_4w"
+    log_file = "Results/set_mlp_fashionmnist_" + str(args.n_training_samples) + "_training_samples_e" + \
+                    str(args.epsilon) + "_rand" + str(1) + "_logs_execution"
     initialize_logger(filename=log_file, file_level=args.log_level, stream_level=args.log_level)
 
     # SET parameters
@@ -118,7 +118,7 @@ if __name__ == '__main__':
 
     if num_processes == 1:
         # Load dataset
-        X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
+        X_train, Y_train, X_test, Y_test = load_fashion_mnist_data(args.n_training_samples, args.n_testing_samples)
         validate_every = int((X_train.shape[0] // args.batch_size) * num_workers)
         data = Data(batch_size=args.batch_size,
                     x_train=X_train, y_train=Y_train,
@@ -135,7 +135,7 @@ if __name__ == '__main__':
 
             # Load normal dataset
 
-            X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples,
+            X_train, Y_train, X_test, Y_test = load_fashion_mnist_data(args.n_training_samples,
                                                                                args.n_testing_samples)
             validate_every = int((X_train.shape[0] // args.batch_size) * num_workers)
             partitions = shared_partitions(X_train.shape[0], num_workers, args.batch_size)
@@ -149,7 +149,7 @@ if __name__ == '__main__':
             # X_test = np.load('mpi_training/cifar10/x_test.npy', mmap_mode='r')
             # Y_test = np.load('mpi_training/cifar10/y_test.npy', mmap_mode='r')
 
-            X_train, Y_train,  X_test, Y_test = load_cifar10_data(args.n_training_samples,
+            X_train, Y_train,  X_test, Y_test = load_fashion_mnist_data(args.n_training_samples,
                                                                     args.n_testing_samples)
 
             validate_every = int((X_train.shape[0] // args.batch_size) * num_workers)
@@ -176,15 +176,15 @@ if __name__ == '__main__':
         algo = Algo(optimizer='sgd', validate_every=validate_every, lr=args.lr, sync_every=args.sync_every)
 
     # Model architecture cifar10
-    dimensions = (3072, 4000, 1000, 4000, 10)
+    # dimensions = (3072, 4000, 1000, 4000, 10)
 
     # Model architecture mnist
-    # dimensions = (784, 1000, 1000, 1000, 10)
+    dimensions = (784, 1000, 1000, 1000, 10)
 
     # Model architecture higgs
     # dimensions = (28, 1000, 1000, 1000, 2)
 
-    model = MPIModel(model=SET_MLP(dimensions, (Relu, Relu, Relu, Softmax      ), **model_config))
+    model = MPIModel(model=SET_MLP(dimensions, (Relu, Relu, Relu, Softmax), **model_config))
 
     save_filename = "Results/set_mlp_" + str(args.n_training_samples) + "_training_samples_e" + \
                     str(args.epsilon) + "_rand" + str(1) + "_process_" + str(rank) + "_num_workers_" + str(num_workers)

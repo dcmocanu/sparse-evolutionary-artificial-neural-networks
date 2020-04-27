@@ -77,7 +77,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr-rate-decay', type=float, default=0.0, help='learning rate decay (default: 0)')
     parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum (default: 0.5)')
     parser.add_argument('--dropout-rate', type=float, default=0.3, help='Dropout rate')
-    parser.add_argument('--weight-decay', type=float, default=0.0000, help='Dropout rate')
+    parser.add_argument('--weight-decay', type=float, default=0.0002, help='Dropout rate')
     parser.add_argument('--epsilon', type=int, default=20, help='Sparsity level')
     parser.add_argument('--zeta', type=float, default=0.3,
                         help='It gives the percentage of unimportant connections which are removed and replaced with '
@@ -93,7 +93,7 @@ if __name__ == '__main__':
 
     # Initialize logger
     log_file = "Results/set_mlp_" + str(args.n_training_samples) + "_training_samples_e" + \
-                    str(args.epsilon) + "_rand" + str(1) + "_logs"
+                    str(args.epsilon) + "_rand" + str(1) + "_logs_4w"
     initialize_logger(filename=log_file, file_level=args.log_level, stream_level=args.log_level)
 
     # SET parameters
@@ -142,6 +142,7 @@ if __name__ == '__main__':
             data = Data(batch_size=args.batch_size,
                         x_train=X_train[partitions[rank - 1]], y_train=Y_train[partitions[rank - 1]],
                         x_test=X_test, y_test=Y_test)
+            logging.info(f"Data partition contains {data.x_train.shape[0]} samples")
 
             del X_train, Y_train, X_test, Y_test
         else:

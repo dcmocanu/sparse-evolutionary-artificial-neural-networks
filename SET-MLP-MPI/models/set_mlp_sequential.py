@@ -194,13 +194,13 @@ class SET_MLP:
         keep_mask = noise >= rate
         return x * scale * keep_mask.astype('float64'), keep_mask.astype('float64')
 
-    def _feed_forward(self, x, drop=True):
+    def _feed_forward(self, x, drop=False):
         """
         Execute a forward feed through the network.
         :param x: (array) Batch of input data vectors.
         :return: (tpl) Node outputs and activations per layer. The numbering of the output is equivalent to the layer numbers.
         """
-
+        if self.dropout_rate > 0.0: drop = True
         # w(x) + b
         z = {}
 
@@ -295,8 +295,8 @@ class SET_MLP:
         self.b[index] += self.pdd[index] - self.weight_decay * self.b[index]
 
     def train_on_batch(self, x, y):
-        z, a = self._feed_forward(x, True)
-        self._back_prop(z, a, y)
+        z, a, masks = self._feed_forward(x, True)
+        self._back_prop(z, a, masks, y)
         accuracy, activations = self.predict(x, y)
         return self.loss.loss(y, activations), accuracy
 
@@ -505,7 +505,9 @@ class SET_MLP:
                 # add new random connections
                 keepConnections = np.size(rowsWNew)
                 lengthRandom = valsW.shape[0] - keepConnections
-                randomVals = np.random.randn(lengthRandom) / 10
+                limit = np.sqrt(6. / float(self.dimensions[i] + self.dimensions[i + 1]))
+                randomVals = np.random.uniform(-limit, limit, lengthRandom)
+                #randomVals = np.random.randn(lengthRandom) / 10
                 zeroVals = 0 * randomVals  # explicit zeros
 
                 # adding  (wdok[ik,jk]!=0): condition

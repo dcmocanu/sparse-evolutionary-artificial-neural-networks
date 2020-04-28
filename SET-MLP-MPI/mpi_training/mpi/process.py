@@ -445,7 +445,7 @@ class MPIWorker(MPIProcess):
         self.await_signal_from_parent()
 
         # periodically check this request to see if the parent has told us to stop training
-        exit_request = self.recv_exit_from_parent()
+        # exit_request = self.recv_exit_from_parent()
 
         maximum_accuracy = 0
         metrics = np.zeros((self.num_epochs, 6))
@@ -458,7 +458,9 @@ class MPIWorker(MPIProcess):
 
             self.data.shuffle()
 
-            for i_batch, batch in enumerate(self.data.generate_data()):
+            for j in range(self.data.x_train.shape[0] // self.data.batch_size):
+                k = j * self.data.batch_size
+                l = (j + 1) * self.data.batch_size
 
                 if self.process_comm:
                     ## broadcast the weights to all processes
@@ -466,19 +468,20 @@ class MPIWorker(MPIProcess):
                     if self.process_comm.Get_rank() != 0:
                         self.model.set_weights(self.weights)
 
-                self.update = self.model.train_on_batch(x=batch[0], y=batch[1])
+                self.update = self.model.train_on_batch(x=self.data.x_train[k:l], y=self.data.y_train[k:l])
 
                 if self.algo.should_sync():
                     self.sync_with_parent()
 
-                if exit_request and exit_request.Test():
-                    self.stop_training = True
-                    if self.process_comm:
-                        for r in range(1, self.process_comm.Get_size()):
-                            ## propagate the exit signal to processes of this worker
-                            self.send_exit_to_child(r, comm=self.process_comm)
-                    self.logger.info("Received exit request from master")
-                    break
+
+                # if exit_request and exit_request.Test():
+                #     self.stop_training = True
+                #     if self.process_comm:
+                #         for r in range(1, self.process_comm.Get_size()):
+                #             ## propagate the exit signal to processes of this worker
+                #             self.send_exit_to_child(r, comm=self.process_comm)
+                #     self.logger.info("Received exit request from master")
+                #     break
 
             if self.monitor:
                 self.monitor.stop_monitor()
@@ -641,7 +644,7 @@ class MPIMaster(MPIProcess):
                                 self.logger.info(self.weights['w'][2].count_nonzero())
                                 self.logger.info(self.weights['w'][3].count_nonzero())
                                 self.logger.info(self.weights['w'][4].count_nonzero())
-                                self.model.model.weightsEvolution_III()
+                                #self.model.model.weightsEvolution_III()
                                 t6 = datetime.datetime.now()
                                 self.logger.info(f"Weights evolution time  {t6 - t5}")
 
@@ -661,6 +664,7 @@ class MPIMaster(MPIProcess):
                             self.validate(self.weights)
                             if self.epoch < self.num_epochs//self.num_workers - 1:
                                 t5 = datetime.datetime.now()
+
                                 self.model.weight_evolution()
                                 t6 = datetime.datetime.now()
                                 self.logger.info(f"Weights evolution time  {t6 - t5}")

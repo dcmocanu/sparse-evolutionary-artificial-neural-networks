@@ -1,6 +1,5 @@
 import argparse
 import logging
-from models.set_mlp_mpi import *
 from utils.load_data import *
 
 from mpi4py import MPI
@@ -72,12 +71,12 @@ if __name__ == '__main__':
 
     # Model configuration
     parser.add_argument('--batch-size', type=int, default=100, help='input batch size for training (default: 64)')
-    parser.add_argument('--epochs', type=int, default=500,  help='number of epochs to train (default: 10)')
+    parser.add_argument('--epochs', type=int, default=200,  help='number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=0.01, help='learning rate (default: 0.01)')
     parser.add_argument('--lr-rate-decay', type=float, default=0.0, help='learning rate decay (default: 0)')
     parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum (default: 0.5)')
     parser.add_argument('--dropout-rate', type=float, default=0.3, help='Dropout rate')
-    parser.add_argument('--weight-decay', type=float, default=0.0002, help='Dropout rate')
+    parser.add_argument('--weight-decay', type=float, default=0.00, help='Dropout rate')
     parser.add_argument('--epsilon', type=int, default=20, help='Sparsity level')
     parser.add_argument('--zeta', type=float, default=0.3,
                         help='It gives the percentage of unimportant connections which are removed and replaced with '
@@ -92,8 +91,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Initialize logger
-    log_file = "Results/set_mlp_fashionmnist_" + str(args.n_training_samples) + "_training_samples_e" + \
-                    str(args.epsilon) + "_rand" + str(1) + "_logs_execution"
+    log_file = "Results/set_mlp_mpi_fashionmnist_" + str(args.n_training_samples) + "_training_samples_e" + \
+                    str(args.epsilon) + "_rand" + str(1) + "_logs_execution_4workers.txt"
     initialize_logger(filename=log_file, file_level=args.log_level, stream_level=args.log_level)
 
     # SET parameters
@@ -183,10 +182,14 @@ if __name__ == '__main__':
 
     # Model architecture higgs
     # dimensions = (28, 1000, 1000, 1000, 2)
+    if rank==0:
+        from models.set_mlp_mpi_master import *
+        model = MPIModel(model=SET_MLP(dimensions, (Relu, Relu, Relu, Softmax), **model_config))
+    else:
+        from models.set_mlp_mpi import *
+        model = MPIModel(model=SET_MLP(dimensions, (Relu, Relu, Relu, Softmax), **model_config))
 
-    model = MPIModel(model=SET_MLP(dimensions, (Relu, Relu, Relu, Softmax), **model_config))
-
-    save_filename = "Results/set_mlp_" + str(args.n_training_samples) + "_training_samples_e" + \
+    save_filename = "Results/set_mlp_mpi_fashionmnist_" + str(args.n_training_samples) + "_training_samples_e" + \
                     str(args.epsilon) + "_rand" + str(1) + "_process_" + str(rank) + "_num_workers_" + str(num_workers)
 
     # Creating the MPIManager object causes all needed worker and master nodes to be created

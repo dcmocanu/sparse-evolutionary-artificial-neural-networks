@@ -67,12 +67,16 @@ class MomentumSGD(Optimizer):
                 weights['pdw'][index] = - self.learning_rate * dw
                 weights['pdd'][index] = - self.learning_rate * delta
             else:
-                dw = retain_valid_updates(weights['w'][index], dw)
+                try:
+                    dw = retain_valid_updates(weights['w'][index], dw)
+                except:
+                    break
+
                 weights['pdw'][index] = self.momentum * weights['pdw'][index] - self.learning_rate * dw
                 weights['pdd'][index] = self.momentum * weights['pdd'][index] - self.learning_rate * delta
 
-            weights['w'][index] += weights['pdw'][index] - self.weight_decay * weights['w'][index]
-            weights['b'][index] += weights['pdd'][index] - self.weight_decay * weights['b'][index]
+            weights['w'][index] += weights['pdw'][index] #- self.weight_decay * weights['w'][index]
+            weights['b'][index] += weights['pdd'][index] #- self.weight_decay * weights['b'][index]
 
         return weights
 
@@ -393,9 +397,10 @@ def retain_valid_updates(weights, gradient):
 
     indices = list(set(Kb).difference(set(Ka)))
     if indices:
-        rows, cols = np.unravel_index(indices, gradient.shape)
-        gradient[rows, cols] = 0
-        gradient.eliminate_zeros()
+        # rows, cols = np.unravel_index(indices, gradient.shape)
+        # gradient[rows, cols] = 0
+        # gradient.eliminate_zeros()
+        raise AssertionError()
 
     return gradient
 

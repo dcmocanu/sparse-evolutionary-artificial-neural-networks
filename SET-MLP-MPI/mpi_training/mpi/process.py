@@ -450,6 +450,8 @@ class MPIWorker(MPIProcess):
         maximum_accuracy = 0
         metrics = np.zeros((self.num_epochs, 6))
 
+        self.model.set_weights(self.weights)
+
         for epoch in range(1, self.num_epochs + 1):
             self.logger.info("Beginning epoch {:d}".format(self.epoch + epoch))
 
@@ -652,9 +654,8 @@ class MPIMaster(MPIProcess):
                             self.logger.info(f"Master epoch {self.epoch + 1}")
 
                 else:
-                    if self.algo.validate_every > 0 and self.time_step > 0:
-                        if self.time_step % self.algo.validate_every != 0:
-                            self.apply_update()
+
+                    self.apply_update()
                     if self.is_synchronous():
                         self.update = {}
 
@@ -664,10 +665,10 @@ class MPIMaster(MPIProcess):
                             self.biases_to_save.append(self.weights['b'])
 
                             self.validate(self.weights)
-                            if self.epoch < self.num_epochs//self.num_workers - 1:
+                            if self.epoch < self.num_epochs//(self.num_workers//2) - 1:
                                 t5 = datetime.datetime.now()
 
-                                #self.model.weight_evolution()
+                                self.model.weight_evolution()
                                 t6 = datetime.datetime.now()
                                 self.logger.info(f"Weights evolution time  {t6 - t5}")
                                 self.weights = self.model.get_weights()

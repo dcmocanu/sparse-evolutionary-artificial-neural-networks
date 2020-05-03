@@ -449,6 +449,11 @@ class SET_MLP:
                 rowsW = wcoo.row
                 colsW = wcoo.col
 
+                pdcoo = self.pdw[i].tocoo()
+                valsPD = pdcoo.data
+                rowsPD = pdcoo.row
+                colsPD = pdcoo.col
+
                 # print("Number of non zeros in W and PD matrix before evolution in layer",i,[np.size(valsW), np.size(valsPD)])
                 values = np.sort(self.w[i].data)
                 firstZeroPos = find_first_pos(values, 0)
@@ -463,20 +468,23 @@ class SET_MLP:
                 rowsWNew = rowsW[(valsW > smallestPositive) | (valsW < largestNegative)]
                 colsWNew = colsW[(valsW > smallestPositive) | (valsW < largestNegative)]
 
-                # newWRowColIndex = np.stack((rowsWNew, colsWNew), axis=-1)
-                # oldPDRowColIndex = np.stack((rowsPD, colsPD), axis=-1)
+                newWRowColIndex = np.stack((rowsWNew, colsWNew), axis=-1)
+                oldPDRowColIndex = np.stack((rowsPD, colsPD), axis=-1)
 
-                # newPDRowColIndexFlag = array_intersect(oldPDRowColIndex, newWRowColIndex)  # careful about order
+                newPDRowColIndexFlag = array_intersect(oldPDRowColIndex, newWRowColIndex)  # careful about order
 
-                # valsPDNew = valsPD[newPDRowColIndexFlag]
-                # rowsPDNew = rowsPD[newPDRowColIndexFlag]
-                # colsPDNew = colsPD[newPDRowColIndexFlag]
+                valsPDNew = valsPD[newPDRowColIndexFlag]
+                rowsPDNew = rowsPD[newPDRowColIndexFlag]
+                colsPDNew = colsPD[newPDRowColIndexFlag]
 
-                # if(i==1):
-                #     self.inputLayerConnections.append(coo_matrix((valsWNew, (rowsWNew, colsWNew)),
-                #                        (self.dimensions[i - 1], self.dimensions[i])).getnnz(axis=1))
-                #     np.savez_compressed(self.save_filename + "_input_connections.npz",
-                #                         inputLayerConnections=self.inputLayerConnections)
+                self.pdw[i] = coo_matrix((valsPDNew, (rowsPDNew, colsPDNew)),
+                                         (self.dimensions[i - 1], self.dimensions[i])).tocsr()
+
+                if(i==1):
+                    self.inputLayerConnections.append(coo_matrix((valsWNew, (rowsWNew, colsWNew)),
+                                       (self.dimensions[i - 1], self.dimensions[i])).getnnz(axis=1))
+                    np.savez_compressed(self.save_filename + "_input_connections.npz",
+                                        inputLayerConnections=self.inputLayerConnections)
 
                 # add new random connections
                 keepConnections = np.size(rowsWNew)
@@ -518,8 +526,8 @@ class SET_MLP:
                 # t_ev_2 = datetime.datetime.now()
                 # print("Weights evolution time for layer",i,"is", t_ev_2 - t_ev_1)
 
-        self.pdw = {}
-        self.pdd = {}
+        # self.pdw = {}
+        # self.pdd = {}
 
     def predict(self, x_test, y_test, batch_size=1):
         """

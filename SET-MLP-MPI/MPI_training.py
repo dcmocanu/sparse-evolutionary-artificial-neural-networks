@@ -91,8 +91,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Initialize logger
-    log_file = "Results/set_mlp_mpi_fashionmnist_" + str(args.n_training_samples) + "_training_samples_e" + \
-                    str(args.epsilon) + "_rand" + str(1) + "_logs_execution_4workers.txt"
+    log_file = "Results/set_mlp_fix_mpi_fashionmnist_" + str(args.n_training_samples) + "_training_samples_e" + \
+                    str(args.epsilon) + "_rand" + str(1) + "_logs_execution_9workers.txt"
     initialize_logger(filename=log_file, file_level=args.log_level, stream_level=args.log_level)
 
     # SET parameters
@@ -151,7 +151,7 @@ if __name__ == '__main__':
             X_train, Y_train,  X_test, Y_test = load_fashion_mnist_data(args.n_training_samples,
                                                                     args.n_testing_samples)
 
-            validate_every = int((X_train.shape[0] // args.batch_size) * num_workers)
+            validate_every = int((X_train.shape[0] // args.batch_size) * (num_workers//2))
             data = Data(batch_size=args.batch_size,
                         x_train=X_train, y_train=Y_train,
                         x_test=X_test, y_test=Y_test)
@@ -189,7 +189,7 @@ if __name__ == '__main__':
         from models.set_mlp_mpi import *
         model = MPIModel(model=SET_MLP(dimensions, (Relu, Relu, Relu, Softmax), **model_config))
 
-    save_filename = "Results/set_mlp_mpi_fashionmnist_" + str(args.n_training_samples) + "_training_samples_e" + \
+    save_filename = "Results/set_mlp_fix_mpi_fashionmnist_" + str(args.n_training_samples) + "_training_samples_e" + \
                     str(args.epsilon) + "_rand" + str(1) + "_process_" + str(rank) + "_num_workers_" + str(num_workers)
 
     # Creating the MPIManager object causes all needed worker and master nodes to be created

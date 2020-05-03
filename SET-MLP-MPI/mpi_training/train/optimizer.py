@@ -67,10 +67,10 @@ class MomentumSGD(Optimizer):
                 weights['pdw'][index] = - self.learning_rate * dw
                 weights['pdd'][index] = - self.learning_rate * delta
             else:
-                try:
-                    dw = retain_valid_updates(weights['w'][index], dw)
-                except:
-                    break
+                # try:
+                #     dw = retain_valid_updates(weights['w'][index], dw)
+                # except:
+                #     break
 
                 weights['pdw'][index] = self.momentum * weights['pdw'][index] - self.learning_rate * dw
                 weights['pdd'][index] = self.momentum * weights['pdd'][index] - self.learning_rate * delta

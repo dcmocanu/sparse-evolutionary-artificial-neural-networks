@@ -36,7 +36,7 @@ parser.add_argument('--seed', type=int, default=0, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
-parser.add_argument('--n-training-samples', type=int, default=60000, metavar='N',
+parser.add_argument('--n-training-samples', type=int, default=50000, metavar='N',
                     help='Number of training samples')
 parser.add_argument('--n-testing-samples', type=int, default=10000, metavar='N',
                     help='Number of testing samples')
@@ -90,7 +90,7 @@ if __name__ == "__main__":
 
         # Load augmented dataset
         start_time = time.time()
-        X_train, Y_train, X_test, Y_test = load_fashion_mnist_data(args.n_training_samples, args.n_testing_samples)
+        X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
         step_time = time.time() - start_time
         print("Loading augmented dataset time: ", step_time)
 
@@ -101,11 +101,11 @@ if __name__ == "__main__":
         print("Number of neurons per layer:", X_train.shape[1], n_hidden_neurons, n_hidden_neurons,
         n_hidden_neurons, Y_train.shape[1])
 
-        set_mlp = SET_MLP((X_train.shape[1], 1000, 1000, 1000,
+        set_mlp = SET_MLP((X_train.shape[1], 4000, 1000, 4000,
                            Y_train.shape[1]), (Relu, Relu, Relu, Softmax), **config)
         start_time = time.time()
         set_mlp.fit(X_train, Y_train, X_test, Y_test, testing=True,
-                    save_filename=r"Results/set_mlp_sequential_softmax_fashionmnist_" +
+                    save_filename=r"Results/set_mlp_sequential_cifar10_" +
                                   str(n_training_samples) + "_training_samples_e" + str(
                         epsilon) + "_rand" + str(i))
         step_time = time.time() - start_time

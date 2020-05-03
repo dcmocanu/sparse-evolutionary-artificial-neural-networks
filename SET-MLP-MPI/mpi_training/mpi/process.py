@@ -565,7 +565,7 @@ class MPIMaster(MPIProcess):
         self.biases_to_save = []
 
         self.num_workers = child_comm.Get_size() - 1  # all processes but one are workers
-        self.metrics = np.zeros((num_epochs // self.num_workers + 1, 4))
+        self.metrics = np.zeros((num_epochs // (self.num_workers//2) + 1, 4))
 
         self.num_sync_workers = num_sync_workers
         info = ("Creating MPIMaster with rank {0} and parent rank {1}. "
@@ -665,7 +665,7 @@ class MPIMaster(MPIProcess):
                             if self.epoch < self.num_epochs//self.num_workers - 1:
                                 t5 = datetime.datetime.now()
 
-                                self.model.weight_evolution()
+                                #self.model.weight_evolution()
                                 t6 = datetime.datetime.now()
                                 self.logger.info(f"Weights evolution time  {t6 - t5}")
                                 self.weights = self.model.get_weights()

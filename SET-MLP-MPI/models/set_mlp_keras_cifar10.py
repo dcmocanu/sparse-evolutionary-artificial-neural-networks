@@ -73,7 +73,7 @@ parser.add_argument('--batch-size', type=int, default=100, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=3000, metavar='N',
                     help='input batch size for testing (default: 1000)')
-parser.add_argument('--epochs', type=int, default=500, metavar='N',
+parser.add_argument('--epochs', type=int, default=200, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                     help='learning rate (default: 0.01)')
@@ -96,7 +96,7 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
-parser.add_argument('--n-training-samples', type=int, default=60000, metavar='N',
+parser.add_argument('--n-training-samples', type=int, default=50000, metavar='N',
                     help='Number of training samples')
 parser.add_argument('--n-testing-samples', type=int, default=10000, metavar='N',
                     help='Number of testing samples')
@@ -155,15 +155,15 @@ class SET_MLP_CIFAR10:
         self.epsilon = 20 # control the sparsity level as discussed in the paper
         self.zeta = 0.3 # the fraction of the weights removed
         self.batch_size = 100 # batch size
-        self.maxepoches = 500 # number of epochs
+        self.maxepoches = 200 # number of epochs
         self.learning_rate = 0.01 # SGD learning rate
         self.num_classes = 10 # number of classes
         self.momentum=0.9 # SGD momentum
 
         # generate an Erdos Renyi sparse weights mask for each layer
-        [self.noPar1, self.wm1] = createWeightsMask(self.epsilon,28*28, 1000)
-        [self.noPar2, self.wm2] = createWeightsMask(self.epsilon,1000, 1000)
-        [self.noPar3, self.wm3] = createWeightsMask(self.epsilon,1000, 1000)
+        [self.noPar1, self.wm1] = createWeightsMask(self.epsilon,32*32*3, 4000)
+        [self.noPar2, self.wm2] = createWeightsMask(self.epsilon,4000, 1000)
+        [self.noPar3, self.wm3] = createWeightsMask(self.epsilon,1000, 4000)
 
         # initialize layers weights
         self.w1 = None
@@ -187,14 +187,14 @@ class SET_MLP_CIFAR10:
 
         # create a SET-MLP model for CIFAR10 with 3 hidden layers
         self.model = Sequential()
-        self.model.add(Flatten(input_shape=(28, 28)))
-        self.model.add(Dense(1000, name="sparse_1",kernel_constraint=MaskWeights(self.wm1),weights=self.w1))
+        self.model.add(Flatten(input_shape=(32, 32, 3)))
+        self.model.add(Dense(4000, name="sparse_1",kernel_constraint=MaskWeights(self.wm1),weights=self.w1))
         self.model.add(ReLU(name="srelu1",weights=self.wSRelu1))
         self.model.add(Dropout(0.3))
         self.model.add(Dense(1000, name="sparse_2",kernel_constraint=MaskWeights(self.wm2),weights=self.w2))
         self.model.add(ReLU(name="srelu2",weights=self.wSRelu2))
         self.model.add(Dropout(0.3))
-        self.model.add(Dense(1000, name="sparse_3",kernel_constraint=MaskWeights(self.wm3),weights=self.w3))
+        self.model.add(Dense(4000, name="sparse_3",kernel_constraint=MaskWeights(self.wm3),weights=self.w3))
         self.model.add(ReLU(name="srelu3",weights=self.wSRelu3))
         self.model.add(Dropout(0.3))
         self.model.add(Dense(self.num_classes, name="dense_4", weights=self.w4)) #please note that there is no need for a sparse output layer as the number of classes is much smaller than the number of input hidden neurons
@@ -391,16 +391,16 @@ if __name__ == '__main__':
             'loss': 'mse'
         }
     np.random.seed(0)
-    X_train, Y_train, X_test, Y_test = load_fashion_mnist_data(args.n_training_samples, args.n_testing_samples)
+    X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
 
     # create and run a SET-MLP model on CIFAR10
     model=SET_MLP_CIFAR10()
-    X_train = X_train.reshape(-1, 28, 28)
-    X_test = X_test.reshape(-1, 28, 28)
+    X_train = X_train.reshape(-1, 32, 32, 3)
+    X_test = X_test.reshape(-1, 32, 32, 3)
 
     start_time = time.time()
     model.fit(X_train, Y_train, X_test, Y_test, batch_size, testing=True,
-                save_filename="../Results/set_mlp_keras_fashionmnist_" + str(n_training_samples) + "_training_samples_e" + str(
+                save_filename="../Results/set_mlp_keras_cifar10_one_cpu" + str(n_training_samples) + "_training_samples_e" + str(
                     epsilon) + "_rand" + str(0))
     step_time = time.time() - start_time
     print("\nTotal training time: ", step_time)
@@ -411,7 +411,7 @@ if __name__ == '__main__':
 
     # save accuracies over for all training epochs
     # in "results" folder you can find the output of running this file
-    np.savetxt("../Results/set_mlp_relu_sgd_cifar10.txt", np.asarray(model.accuracies_per_epoch))
+    np.savetxt("../Results/set_mlp_relu_sgd_cifar10_one_cpu.txt", np.asarray(model.accuracies_per_epoch))
 
 
 

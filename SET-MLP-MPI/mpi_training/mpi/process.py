@@ -644,7 +644,7 @@ class MPIMaster(MPIProcess):
                                 self.logger.info(self.weights['w'][2].count_nonzero())
                                 self.logger.info(self.weights['w'][3].count_nonzero())
                                 self.logger.info(self.weights['w'][4].count_nonzero())
-                                #self.model.model.weightsEvolution_III()
+                                self.model.model.weightsEvolution_III()
                                 t6 = datetime.datetime.now()
                                 self.logger.info(f"Weights evolution time  {t6 - t5}")
 
@@ -652,7 +652,9 @@ class MPIMaster(MPIProcess):
                             self.logger.info(f"Master epoch {self.epoch + 1}")
 
                 else:
-                    self.apply_update()
+                    if self.algo.validate_every > 0 and self.time_step > 0:
+                        if self.time_step % self.algo.validate_every != 0:
+                            self.apply_update()
                     if self.is_synchronous():
                         self.update = {}
 

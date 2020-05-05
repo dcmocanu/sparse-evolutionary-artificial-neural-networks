@@ -1,5 +1,5 @@
 # Author: Decebal Constantin Mocanu et al.;
-# Proof of concept implementation of Sparse Evolutionary Training (SET) of Multi Layer Perceptron (MLP) on CIFAR10 using Keras and a mask over weights.
+# Proof of concept implementation of Sparse Evolutionary Training (SET) of Multi Layer Perceptron (MLP) on Fashion Mnist using Keras and a mask over weights.
 # This implementation can be used to test SET in varying conditions, using the Keras framework versatility, e.g. various optimizers, activation layers, tensorflow
 # Also it can be easily adapted for Convolutional Neural Networks or other models which have dense layers
 # However, due the fact that the weights are stored in the standard Keras format (dense matrices), this implementation can not scale properly.
@@ -43,19 +43,17 @@ from __future__ import print_function
 from utils.load_data import *
 from keras.preprocessing.image import ImageDataGenerator
 from keras.models import Sequential
+from keras.datasets import fashion_mnist
 from keras.layers import Dense, Dropout, Activation, Flatten, ReLU
 from keras import optimizers
-import numpy as np
-import time
 from models.sgdw_keras import SGDW
 import datetime
 from keras import backend as K
-#Please note that in newer versions of keras_contrib you may encounter some import errors. You can find a fix for it on the Internet, or as an alternative you can try other activations functions.
-from keras_contrib.layers.advanced_activations.srelu import SReLU
-from keras.datasets import cifar10
 from keras.utils import np_utils
 import argparse
 import keras
+import numpy as np
+import time
 
 
 class TestCallback(keras.callbacks.Callback):
@@ -69,30 +67,7 @@ class TestCallback(keras.callbacks.Callback):
 
 # Training settings
 parser = argparse.ArgumentParser(description='SET Parallel Training ')
-parser.add_argument('--batch-size', type=int, default=100, metavar='N',
-                    help='input batch size for training (default: 64)')
-parser.add_argument('--test-batch-size', type=int, default=3000, metavar='N',
-                    help='input batch size for testing (default: 1000)')
-parser.add_argument('--epochs', type=int, default=200, metavar='N',
-                    help='number of epochs to train (default: 10)')
-parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
-                    help='learning rate (default: 0.01)')
-parser.add_argument('--lr-rate-decay', type=float, default=0.0, metavar='LRD',
-                    help='learning rate decay (default: 0)')
-parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
-                    help='SGD momentum (default: 0.9)')
-parser.add_argument('--dropout-rate', type=float, default=0.3, metavar='D',
-                    help='Dropout rate')
-parser.add_argument('--weight-decay', type=float, default=0.00, metavar='W',
-                    help='Dropout rate')
-parser.add_argument('--epsilon', type=int, default=20, metavar='E',
-                    help='Sparsity level')
-parser.add_argument('--zeta', type=float, default=0.3, metavar='Z',
-                    help='It gives the percentage of unimportant connections which are removed and replaced with '
-                         'random ones after every epoch(in [0..1])')
-parser.add_argument('--seed', type=int, default=1, metavar='S',
-                    help='random seed (default: 1)')
-parser.add_argument('--n-training-samples', type=int, default=50000, metavar='N',
+parser.add_argument('--n-training-samples', type=int, default=60000, metavar='N',
                     help='Number of training samples')
 parser.add_argument('--n-testing-samples', type=int, default=10000, metavar='N',
                     help='Number of testing samples')
@@ -105,6 +80,7 @@ class Constraint(object):
 
     def get_config(self):
         return {}
+
 
 class MaskWeights(Constraint):
 
@@ -141,21 +117,21 @@ def createWeightsMask(epsilon, n_rows, n_cols):
     return [no_parameters, mask_weights]
 
 
-class SET_MLP_CIFAR10:
+class SET_MLP_FASHIONMNIST:
     def __init__(self):
         # set model parameters
-        self.epsilon = 20 # control the sparsity level as discussed in the paper
-        self.zeta = 0.3 # the fraction of the weights removed
-        self.batch_size = 100 # batch size
-        self.maxepoches = 200 # number of epochs
-        self.learning_rate = 0.01 # SGD learning rate
+        self.epsilon = 20  # control the sparsity level as discussed in the paper
+        self.zeta = 0.3  # the fraction of the weights removed
+        self.batch_size = 100  # batch size
+        self.max_epoches = 200  # number of epochs
+        self.learning_rate = 0.01  # SGD learning rate
         self.num_classes = 10 # number of classes
-        self.momentum=0.9 # SGD momentum
+        self.momentum = 0.9  # SGD momentum
 
         # generate an Erdos Renyi sparse weights mask for each layer
-        [self.noPar1, self.wm1] = createWeightsMask(self.epsilon,32*32*3, 4000)
-        [self.noPar2, self.wm2] = createWeightsMask(self.epsilon,4000, 1000)
-        [self.noPar3, self.wm3] = createWeightsMask(self.epsilon,1000, 4000)
+        [self.noPar1, self.wm1] = createWeightsMask(self.epsilon, 28*28, 1000)
+        [self.noPar2, self.wm2] = createWeightsMask(self.epsilon, 1000, 1000)
+        [self.noPar3, self.wm3] = createWeightsMask(self.epsilon, 1000, 1000)
 
         # initialize layers weights
         self.w1 = None
@@ -177,16 +153,16 @@ class SET_MLP_CIFAR10:
 
     def create_model(self):
 
-        # create a SET-MLP model for CIFAR10 with 3 hidden layers
+        # create a SET-MLP model for Fashion Mnist with 3 hidden layers
         self.model = Sequential()
-        self.model.add(Flatten(input_shape=(32, 32, 3)))
-        self.model.add(Dense(4000, name="sparse_1",kernel_constraint=MaskWeights(self.wm1),weights=self.w1))
+        self.model.add(Flatten(input_shape=(28, 28)))
+        self.model.add(Dense(1000, name="sparse_1",kernel_constraint=MaskWeights(self.wm1),weights=self.w1))
         self.model.add(ReLU(name="srelu1",weights=self.wSRelu1))
         self.model.add(Dropout(0.3))
         self.model.add(Dense(1000, name="sparse_2",kernel_constraint=MaskWeights(self.wm2),weights=self.w2))
         self.model.add(ReLU(name="srelu2",weights=self.wSRelu2))
         self.model.add(Dropout(0.3))
-        self.model.add(Dense(4000, name="sparse_3",kernel_constraint=MaskWeights(self.wm3),weights=self.w3))
+        self.model.add(Dense(1000, name="sparse_3",kernel_constraint=MaskWeights(self.wm3),weights=self.w3))
         self.model.add(ReLU(name="srelu3",weights=self.wSRelu3))
         self.model.add(Dropout(0.3))
         self.model.add(Dense(self.num_classes, name="dense_4", weights=self.w4)) #please note that there is no need for a sparse output layer as the number of classes is much smaller than the number of input hidden neurons
@@ -240,10 +216,10 @@ class SET_MLP_CIFAR10:
 
     def train(self):
 
-        # read CIFAR10 data
-        [x_train,x_test,y_train,y_test]=self.read_data()
+        # read Fashio Mnist data
+        [x_train,x_test,y_train,y_test] = self.read_data()
 
-        #data augmentation
+        # data augmentation
         datagen = ImageDataGenerator(
             featurewise_center=False,  # set input mean to 0 over the dataset
             samplewise_center=False,  # set each sample mean to 0
@@ -261,7 +237,7 @@ class SET_MLP_CIFAR10:
 
         # training process in a for loop
         self.accuracies_per_epoch = []
-        for epoch in range(0, self.maxepoches):
+        for epoch in range(0, self.max_epoches):
 
             sgd = SGDW(weight_decay=0.0002, momentum=0.9, learning_rate=0.01)
             self.model.compile(loss='mean_squared_error', optimizer=sgd, metrics=['accuracy'])
@@ -288,7 +264,7 @@ class SET_MLP_CIFAR10:
 
         # training process in a for loop
         self.accuracies_per_epoch = []
-        for epoch in range(0, self.maxepoches):
+        for epoch in range(0, self.max_epoches):
             sgd = optimizers.SGD(momentum=0.9, learning_rate=0.01)
             self.model.compile(loss='categorical_crossentropy', optimizer=sgd, metrics=['accuracy'])
 
@@ -330,8 +306,8 @@ class SET_MLP_CIFAR10:
 
     def read_data(self):
 
-        #read CIFAR10 data
-        (x_train, y_train), (x_test, y_test) = cifar10.load_data()
+        #read Fashion mnist data
+        (x_train, y_train), (x_test, y_test) = fashion_mnist.load_data()
         y_train = np_utils.to_categorical(y_train, self.num_classes)
         y_test = np_utils.to_categorical(y_test, self.num_classes)
         x_train = x_train.astype('float32')
@@ -349,51 +325,22 @@ class SET_MLP_CIFAR10:
 if __name__ == '__main__':
 
     args = parser.parse_args()
-
-    n_hidden_neurons = args.n_neurons
-    epsilon = args.epsilon
-    zeta = args.zeta
-    n_epochs = args.epochs
-    batch_size = args.batch_size
-    dropout_rate = args.dropout_rate
-    learning_rate = args.lr
-    momentum = args.momentum
-    weight_decay = args.weight_decay
-    n_processes = args.n_processes
     n_training_samples = args.n_training_samples
     n_testing_samples = args.n_testing_samples
-    learning_rate_decay = args.lr_rate_decay
 
-    # Prepare config object for the parameter server
-    config = {
-            'n_processes': n_processes,
-            'n_epochs': n_epochs,
-            'batch_size': batch_size,
-            'dropout_rate': dropout_rate,
-            'seed': 0,
-            'lr': learning_rate,
-            'lr_decay': learning_rate_decay,
-            'zeta': zeta,
-            'epsilon': epsilon,
-            'momentum': momentum,
-            'weight_decay': weight_decay,
-            'n_hidden_neurons': n_hidden_neurons,
-            'n_training_samples': n_training_samples,
-            'n_testing_samples': n_testing_samples,
-            'loss': 'mse'
-        }
     np.random.seed(0)
-    X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
+    X_train, Y_train, X_test, Y_test = load_fashion_mnist_data(args.n_training_samples, args.n_testing_samples)
 
-    # create and run a SET-MLP model on CIFAR10
-    model=SET_MLP_CIFAR10()
-    X_train = X_train.reshape(-1, 32, 32, 3)
-    X_test = X_test.reshape(-1, 32, 32, 3)
+    # create and run a SET-MLP model on Fashion Mnist
+    model = SET_MLP_FASHIONMNIST()
+    X_train = X_train.reshape(-1, 28, 28)
+    X_test = X_test.reshape(-1, 28, 28)
+
+    batch_size = 100
 
     start_time = time.time()
     model.fit(X_train, Y_train, X_test, Y_test, batch_size, testing=True,
-                save_filename="../Results/set_mlp_keras_cifar10_one_cpu" + str(n_training_samples) + "_training_samples_e" + str(
-                    epsilon) + "_rand" + str(0))
+                save_filename="../Results/set_mlp_keras_fashionmnist" + str(n_training_samples) + "_training_samples_e"  + "_rand" + str(0))
     step_time = time.time() - start_time
     print("\nTotal training time: ", step_time)
 
@@ -403,7 +350,7 @@ if __name__ == '__main__':
 
     # save accuracies over for all training epochs
     # in "results" folder you can find the output of running this file
-    np.savetxt("../Results/set_mlp_relu_sgd_cifar10_one_cpu.txt", np.asarray(model.accuracies_per_epoch))
+    np.savetxt("../Results/set_mlp_relu_sgd_fashionmnist.txt", np.asarray(model.accuracies_per_epoch))
 
 
 

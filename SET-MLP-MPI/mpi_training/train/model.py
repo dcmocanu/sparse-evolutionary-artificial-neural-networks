@@ -1,5 +1,3 @@
-import numpy as np
-import copy
 from models.set_mlp_mpi import *
 import logging
 
@@ -52,6 +50,3 @@ class MPIModel(object):
 
     def weight_evolution(self):
         return self.model.weightsEvolution_II()
-
-    def getCoreInputConnections(self):
-        return self.model.getCoreInputConnections()

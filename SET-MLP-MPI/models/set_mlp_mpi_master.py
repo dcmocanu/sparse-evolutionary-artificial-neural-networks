@@ -267,7 +267,7 @@ class SET_MLP:
         accuracy, activations = self.predict(x, y)
         return self.loss.loss(y, activations), accuracy
 
-    def getCoreInputConnections(self):
+    def get_core_input_connections(self):
         values = np.sort(self.w[1].data)
         firstZeroPos = find_first_pos(values, 0)
         lastZeroPos = find_last_pos(values, 0)

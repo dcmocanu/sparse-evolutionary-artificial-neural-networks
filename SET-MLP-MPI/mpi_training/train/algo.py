@@ -1,6 +1,5 @@
 ### Algo class
 
-import numpy as np
 from .optimizer import get_optimizer, retain_valid_updates, retain_valid_weights
 
 

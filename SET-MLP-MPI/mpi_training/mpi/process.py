@@ -1,6 +1,6 @@
 ### MPIWorker and MPIMaster classes
 
-import os, json
+import json
 import numpy as np
 import time
 import logging
@@ -20,16 +20,15 @@ class MPIProcess(object):
            parent_comm: MPI intracommunicator used to communicate with this process's parent
            parent_rank (integer): rank of this node's parent in parent_comm
            rank (integer): rank of this node in parent_comm
-           model: Keras model to train
-           model_builder: ModelBuilder object specifying model
+           model: SET model to train
            algo: Algo object defining how to optimize model weights
-           weights_shapes: list of tuples indicating the shape of each layer of the model
            weights: list of numpy arrays storing the last weights received from the parent
            update: latest update obtained from training
            data: Data object used to generate training or validation data
            time_step: for keeping track of time
            num_epochs: integer giving the number of epochs to train for
            stop_training: becomes true when it is time to stop training
+           idle_time: kep track of process' idle time
     """
 
     def __init__(self, parent_comm, process_comm, parent_rank=None, num_epochs=1, data=None, algo=None,
@@ -43,8 +42,9 @@ class MPIProcess(object):
               num_epochs: number of training epochs
               data: Data object used to generate training or validation data
               algo: Algo object used to configure the training process
-              model_builder: ModelBuilder object specifying model
+              model: SET model to train
               monitor: whether to monitor CPU/GPU usage
+              save_filename: file name to log metrics and weights
         """
         self.parent_comm = parent_comm
         self.process_comm = process_comm
@@ -74,10 +74,8 @@ class MPIProcess(object):
         self.logger = get_logger()
 
         if self.process_comm is not None and self.process_comm.Get_size() > 1:
-            self.logger.debug("initializing horovod")
             self.process_comm.Barrier()
             self.process_comm.Barrier()
-            self.algo.worker_optimizer_builder.horovod_wrapper = True
 
         self.rank = parent_comm.Get_rank() if parent_comm else 0
         self.ranks = "{0}:{1}:{2}".format(
@@ -115,14 +113,6 @@ class MPIProcess(object):
     def train(self, testing=False):
         """To be implemented in derived classes"""
         raise NotImplementedError
-
-    def compile_model(self):
-        """Compile the model. Note that the compilation settings
-            are relevant only for Workers because the Master updates
-            its weights using an mpi_learn optimizer."""
-        self.logger.debug("Compiling model")
-        self.algo.compile_model(self.model)
-        self.logger.debug("Compiled")
 
     def print_metrics(self, metrics):
         """Display metrics computed during training or validation"""
@@ -195,14 +185,12 @@ class MPIProcess(object):
             self.logger.error("Not found in tag dictionary: {0} -- returning None".format(name))
             return None
 
-    def recv(self, obj=None, tag=MPI.ANY_TAG, source=None, buffer=False, status=None, comm=None):
-        """Wrapper around MPI.recv/Recv. Returns the received object.
+    def recv(self, obj=None, tag=MPI.ANY_TAG, source=None, status=None, comm=None):
+        """ Wrapper around MPI.recv/Recv. Returns the received object.
             Params:
               obj: variable into which the received object should be placed
               tag: string indicating which MPI tag should be received
               source: integer rank of the message source.  Defaults to self.parent_rank
-              buffer: True if the received object should be sent as a single-segment buffer
-                (e.g. for numpy arrays) using MPI.Recv rather than MPI.recv
               status: MPI status object that is filled with received status information
               comm: MPI communicator to use.  Defaults to self.parent_comm"""
         if comm is None:
@@ -216,28 +204,14 @@ class MPIProcess(object):
         #    comm.Recv(obj, source=source, tag=tag_num, status=status )
         #    return obj
 
-        if buffer:
-            if type(obj) == list:
-                for o in obj:
-                    if type(o) == list:
-                        for sub_o in o:
-                            comm.Recv(sub_o, source=source, tag=tag_num, status=status)
-                    else:
-                        comm.Recv(o, source=source, tag=tag_num, status=status)
-            else:
-                comm.Recv(obj, source=source, tag=tag_num, status=status)
-            return obj
-        else:
-            obj = comm.recv(source=source, tag=tag_num, status=status)
-            return obj
+        obj = comm.recv(source=source, tag=tag_num, status=status)
+        return obj
 
-    def send(self, obj, tag, dest=None, buffer=False, comm=None):
-        """Wrapper around MPI.send/Send.  Params:
+    def send(self, obj, tag, dest=None, comm=None):
+        """ Wrapper around MPI.send/Send.  Params:
              obj: object to send
              tag: string indicating which MPI tag to send
              dest: integer rank of the message destination.  Defaults to self.parent_rank
-             buffer: True if the object should be sent as a single-segment buffer
-                (e.g. for numpy arrays) using MPI.Send rather than MPI.send
              comm: MPI communicator to use.  Defaults to self.parent_comm"""
         if comm is None:
             comm = self.parent_comm
@@ -249,34 +223,13 @@ class MPIProcess(object):
         # if tag in ['time']:
         #    comm.Send( obj, dest=dest, tag=tag_num )
         #    return
-        if buffer:
-            if type(obj) == list:
-                for o in obj:
-                    if type(o) == list:
-                        for sub_o in o:
-                            comm.Send(sub_o, dest=dest, tag=tag_num)
-                    else:
-                        comm.Send(o, dest=dest, tag=tag_num)
-            else:
-                comm.Send(obj, dest=dest, tag=tag_num)
-        else:
-            if type(obj) == list:
-                for o in obj:
-                    if type(o) == list:
-                        for sub_o in o:
-                            comm.Send(sub_o, dest=dest, tag=tag_num)
-                    else:
-                        comm.Send(o, dest=dest, tag=tag_num)
-            else:
-                comm.send(obj, dest=dest, tag=tag_num)
+        comm.send(obj, dest=dest, tag=tag_num)
 
-    def bcast(self, obj, root=0, buffer=False, comm=None):
+    def bcast(self, obj, root=0, comm=None):
         """Wrapper around MPI.bcast/Bcast.  Returns the broadcasted object.
             Params:
               obj: object to broadcast
               root: rank of the node to broadcast from
-              buffer: True if the object should be sent as a single-segment buffer
-                (e.g. for numpy arrays) using MPI.Bcast rather than MPI.bcast
               comm: MPI communicator to use.  Defaults to self.parent_comm"""
         if comm is None:
             comm = self.parent_comm
@@ -290,10 +243,6 @@ class MPIProcess(object):
             self.send(None, 'exit')
 
     def send_arrays(self, obj, expect_tag, tag, comm=None, dest=None, check_permission=False):
-        """Send a list of numpy arrays to the process specified by comm (MPI communicator)
-            and dest (rank).  We first send expect_tag to tell the dest process that we
-            are sending several buffer objects, then send the objects layer by layer.
-            Optionally check first to see if the update will be accepted by the master"""
         self.send(None, expect_tag, comm=comm, dest=dest)
         if check_permission:
             # To check permission we send the update's time stamp to the master.
@@ -302,7 +251,7 @@ class MPIProcess(object):
             decision = self.recv_bool(comm=comm, source=dest)
             if not decision:
                 return
-        self.send(obj, tag, comm=comm, dest=dest, buffer=False)
+        self.send(obj, tag, comm=comm, dest=dest)
 
     def send_weights(self, comm=None, dest=None, check_permission=False):
         if self.is_shadow(): return
@@ -328,11 +277,7 @@ class MPIProcess(object):
         self.send(obj=obj, tag='bool', dest=dest, comm=comm)
 
     def recv_arrays(self, obj, tag, comm=None, source=None):
-        """Receive a list of numpy arrays from the process specified by comm (MPI communicator)
-            and dest (rank).
-              obj: list of destination arrays
-              tag: MPI tag accompanying the message"""
-        return self.recv(obj, tag, comm=comm, source=source, buffer=False)
+        return self.recv(obj, tag, comm=comm, source=source)
 
     def recv_weights(self, comm=None, source=None, add_to_existing=False):
         """Receive NN weights layer by layer from the process specified by comm and source"""
@@ -354,9 +299,9 @@ class MPIProcess(object):
 
                 # perform the update with momentum
                 if index not in self.update:
-                    self.update[index] = (dw, np.mean(delta, 0))
+                    self.update[index] = (dw, delta)
                 else:
-                    self.update[index] = (self.update[index][0] + dw, self.update[index][1] + np.mean(delta, 0))
+                    self.update[index] = (self.update[index][0] + dw, self.update[index][1] + delta)
 
         else:
             self.update = self.recv_arrays(self.update, tag='update', comm=comm, source=source)
@@ -381,7 +326,7 @@ class MPIProcess(object):
     def bcast_weights(self, comm, root=0):
         """Broadcast weights shape and weights (layer by layer)
             on communicator comm from the indicated root rank"""
-        self.bcast(self.weights, comm=comm, root=root, buffer=False)
+        self.bcast(self.weights, comm=comm, root=root)
 
 
 class MPIWorker(MPIProcess):
@@ -441,9 +386,6 @@ class MPIWorker(MPIProcess):
         self.check_sanity()
         self.await_signal_from_parent()
 
-        # periodically check this request to see if the parent has told us to stop training
-        # exit_request = self.recv_exit_from_parent()
-
         maximum_accuracy = 0
         metrics = np.zeros((self.num_epochs, 6))
 
@@ -462,7 +404,7 @@ class MPIWorker(MPIProcess):
                 l = (j + 1) * self.data.batch_size
 
                 if self.process_comm:
-                    ## broadcast the weights to all processes
+                    # broadcast the weights to all processes
                     self.bcast_weights(comm=self.process_comm)
                     if self.process_comm.Get_rank() != 0:
                         self.model.set_weights(self.weights)
@@ -471,16 +413,6 @@ class MPIWorker(MPIProcess):
 
                 if self.algo.should_sync():
                     self.sync_with_parent()
-
-
-                # if exit_request and exit_request.Test():
-                #     self.stop_training = True
-                #     if self.process_comm:
-                #         for r in range(1, self.process_comm.Get_size()):
-                #             ## propagate the exit signal to processes of this worker
-                #             self.send_exit_to_child(r, comm=self.process_comm)
-                #     self.logger.info("Received exit request from master")
-                #     break
 
             if self.monitor:
                 self.monitor.stop_monitor()
@@ -564,7 +496,7 @@ class MPIMaster(MPIProcess):
         self.biases_to_save = []
 
         self.num_workers = child_comm.Get_size() - 1  # all processes but one are workers
-        self.metrics = np.zeros((num_epochs // (self.num_workers) + 1, 4))
+        self.metrics = np.zeros((num_epochs + 1, 4))
 
         self.num_sync_workers = num_sync_workers
         info = ("Creating MPIMaster with rank {0} and parent rank {1}. "
@@ -665,7 +597,7 @@ class MPIMaster(MPIProcess):
                             if self.epoch < self.num_epochs//(self.num_workers) - 1:
                                 t5 = datetime.datetime.now()
 
-                                #self.model.weight_evolution()
+                                self.model.weight_evolution()
                                 t6 = datetime.datetime.now()
                                 self.logger.info(f"Weights evolution time  {t6 - t5}")
                                 self.weights = self.model.get_weights()

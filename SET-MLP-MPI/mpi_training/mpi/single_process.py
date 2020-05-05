@@ -4,15 +4,17 @@ from mpi_training.mpi.process import MPIWorker, MPIMaster
 import datetime
 import json
 
+
 class MPISingleWorker(MPIWorker):
     """This class trains its model with no communication to other processes"""
-    def __init__(self, num_epochs, data, algo, model, verbose, monitor, save_filename):
+    def __init__(self, num_epochs, data, algo, model,monitor, save_filename):
 
         self.has_parent = False
         self.best_val_loss = None
 
-        super(MPISingleWorker, self).__init__(data, algo, model, process_comm=None, parent_comm=None, parent_rank=None,
-            num_epochs=num_epochs, verbose=verbose, monitor=monitor, save_filename=save_filename)
+        super(MPISingleWorker, self).__init__(data, algo, model, process_comm=None, parent_comm=None,
+                                              parent_rank=None, num_epochs=num_epochs, monitor=monitor,
+                                              save_filename=save_filename)
 
     def train(self, testing=True):
         self.check_sanity()
@@ -49,7 +51,7 @@ class MPISingleWorker(MPIWorker):
                 metrics[epoch-1, 1] = loss_test
                 metrics[epoch-1, 2] = accuracy_train
                 metrics[epoch-1, 3] = accuracy_test
-                self.logger.debug(f"Testing time: {t4 - t3}\n; Loss train: {loss_train}; Loss test: {loss_test}; \n"
+                self.logger.info(f"Testing time: {t4 - t3}\n; Loss train: {loss_train}; Loss test: {loss_test}; \n"
                                  f"Accuracy train: {accuracy_train}; Accuracy test: {accuracy_test}; \n"
                                  f"Maximum accuracy test: {maximum_accuracy}")
                 # save performance metrics values in a file
@@ -61,7 +63,7 @@ class MPISingleWorker(MPIWorker):
 
             weights.append(self.weights['w'])
             biases.append(self.weights['b'])
-            if epoch < self.num_epochs -1:  # do not change connectivity pattern after the last epoch
+            if epoch < self.num_epochs - 1:  # do not change connectivity pattern after the last epoch
                 self.model.weight_evolution()
                 self.weights = self.model.get_weights()
 

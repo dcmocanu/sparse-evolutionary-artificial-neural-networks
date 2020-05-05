@@ -42,13 +42,11 @@ class MPIManager(object):
           comm_masters: MPI intracommunicator used for message passing between masters.
             (It will be None if there is only one master.)
           is_master: boolean determining if this process is a master
-          should_validate: boolean determining if this process should run training validation
           synchronous: whether or not to syncronize workers after each update
-          verbose: whether to make MPIProcess objects verbose
     """
 
     def __init__(self, comm, data, algo, model, num_epochs, save_filename, num_masters=1, num_processes=1,
-                 synchronous=False, verbose=False, monitor=False):
+                 synchronous=False, monitor=False):
         """Create MPI communicator(s) needed for training, and create worker
             or master object as appropriate.
             Params:
@@ -60,7 +58,6 @@ class MPIManager(object):
             num_masters: number of master processes
             num_processes: number of processes that make up a worker/master (allreduce)
             synchronous: true if masters should operate in synchronous mode
-            verbose: whether to make MPIProcess objects verbose
             monitor: whether to monitor per-process resource (CPU/GPU) usage
         """
         self.data = data
@@ -81,13 +78,11 @@ class MPIManager(object):
 
         self.num_epochs = num_epochs
         self.synchronous = synchronous
-        self.verbose = verbose
         self.monitor = monitor
         self.comm_block = None
         self.comm_masters = None
         self.comm_instance = None
         self.is_master = None
-        self.should_validate = None
         self.make_comms(comm)
 
     def make_comms(self, comm):
@@ -110,10 +105,8 @@ class MPIManager(object):
         if len(masters) > 1:
             self.comm_masters = comm.Create(comm.Get_group().Incl(masters))
         if rank in masters:
-            ## make the communicator for masters
+            # make the communicator for masters
             self.is_master = True
-        if rank == 0:
-            self.should_validate = True
 
         logging.debug("groups %s", str(groups))
         for igr, gr in enumerate(groups):
@@ -130,7 +123,7 @@ class MPIManager(object):
         logging.debug("processes %s", str(processes))
         for ipr, pr in enumerate(processes):
             if rank in pr and len(pr) > 1:
-                ## make the communicator for that process group
+                # make the communicator for that process group
                 self.comm_instance = comm.Split(ipr)
                 break
 
@@ -167,12 +160,16 @@ class MPIManager(object):
 
                 num_sync_workers = self.get_num_sync_workers(child_comm)
 
-                self.process = MPIMaster(parent_comm, parent_rank=self.parent_rank,
-                                         data=self.data, algo=self.algo, model=self.model,
-                                         child_comm=child_comm, num_epochs=self.num_epochs,
+                self.process = MPIMaster(parent_comm=parent_comm,
+                                         parent_rank=self.parent_rank,
+                                         data=self.data,
+                                         algo=self.algo,
+                                         model=self.model,
+                                         child_comm=child_comm,
+                                         num_epochs=self.num_epochs,
                                          num_sync_workers=num_sync_workers,
-                                         verbose=self.verbose, save_filename=self.save_filename
-                                         )
+                                         save_filename=self.save_filename
+                                )
             else:
 
                 self.process = MPIWorker(data=self.data, algo=self.algo,
@@ -181,16 +178,14 @@ class MPIManager(object):
                                          parent_comm=self.comm_block,
                                          parent_rank=self.parent_rank,
                                          num_epochs=self.num_epochs,
-                                         verbose=self.verbose,
                                          monitor=self.monitor,
                                          save_filename=self.save_filename
-                                         )
+                                )
         else:  # Single Process mode
             from mpi_training.mpi.single_process import MPISingleWorker
             self.process = MPISingleWorker(data=self.data, algo=self.algo,
                                            model=self.model,
                                            num_epochs=self.num_epochs,
-                                           verbose=self.verbose,
                                            monitor=self.monitor,
                                            save_filename=self.save_filename)
 
@@ -202,11 +197,11 @@ class MPIManager(object):
 
     def get_num_sync_workers(self, comm):
         """Returns the number of workers the master should wait for
-            at each training time step.  Currently set to 95% of the
+            at each training time step.  Currently set to 75% of the
             number of workers (or 1 if running asynchronously).
             comm should be the master's child communicator."""
         if self.synchronous:
-            return int(math.ceil(0.95 * (comm.Get_size() - 1)))
+            return int(math.ceil(0.75 * (comm.Get_size() - 1)))
         return 1
 
     def free_comms(self):

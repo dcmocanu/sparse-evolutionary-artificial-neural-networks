@@ -1,7 +1,7 @@
 import argparse
 import logging
-from utils.load_data import *
 
+from utils.load_data import *
 from mpi4py import MPI
 from time import time
 from mpi_training.mpi.manager import MPIManager
@@ -12,16 +12,20 @@ from mpi_training.logger import initialize_logger
 
 # Run this file with "mpiexec -n 4 python MPI_training.py"
 # Add --synchronous if you want to train in syncronous mode
+# Add --monitor to enable cpu and memory monitoring
 
-# Debugging with size > 1
+# Uncomment next lines for debugging with size > 1 (note that port mapping ids change at very run)
 # size = MPI.COMM_WORLD.Get_size()
 # rank = MPI.COMM_WORLD.Get_rank()
 # import pydevd_pycharm
-# port_mapping = [56131, 56135]
+# port_mapping = [56131, 56135] # Add ids of processes you want to debug in this list
 # pydevd_pycharm.settrace('localhost', port=port_mapping[rank], stdoutToServer=True, stderrToServer=True)
 
 
 def shared_partitions(n, num_workers, batch_size):
+    """"
+    Split the training dataset equally amongst the workers
+    """
     dinds = list(range(n))
     num_batches = n // batch_size
     worker_size = num_batches // num_workers
@@ -37,7 +41,6 @@ def shared_partitions(n, num_workers, batch_size):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--monitor', help='Monitor cpu and gpu utilization', default=False, action='store_true')
-    parser.add_argument('--verbose', help='display metrics for each training batch', default=False, action='store_true')
 
     # Configuration of network topology
     parser.add_argument('--masters', help='number of master processes', default=1, type=int)
@@ -45,14 +48,12 @@ if __name__ == '__main__':
     parser.add_argument('--synchronous', help='run in synchronous mode', action='store_true')
 
     # Configuration of training process
-    parser.add_argument('--optimizer', help='optimizer for master to use', default='sgdm')
     parser.add_argument('--loss', help='loss function', default='cross_entropy')
     parser.add_argument('--sync-every', help='how often to sync weights with master',
-                        default=1, type=int, dest='sync_every')
+                        default=5, type=int, dest='sync_every')
     parser.add_argument('--mode', help='Mode of operation.'
                         'One of "sgd" (Stohastic Gradient Descent), "sgdm" (Stohastic Gradient Descent with Momentum),'
-                        '"easgd" (Elastic Averaging SGD) or '
-                        '"gem" (Gradient Energy Matching)',
+                        '"easgd" (Elastic Averaging SGD) or "gem" (Gradient Energy Matching)',
                         default='sgdm')
     parser.add_argument('--elastic-force', help='beta parameter for EASGD', type=float, default=0.9)
     parser.add_argument('--elastic-lr', help='worker SGD learning rate for EASGD',
@@ -91,8 +92,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Initialize logger
-    log_file = "Results/set_mlp_fix_mpi_fashionmnist_" + str(args.n_training_samples) + "_training_samples_e" + \
-                    str(args.epsilon) + "_rand" + str(1) + "_logs_execution_9workers.txt"
+    log_file = "Results/sync_every_2_set_mlp_mpi_fashionmnist_" + str(args.n_training_samples) + "_training_samples_e" + \
+                    str(args.epsilon) + "_rand" + str(1) + "_logs_execution_singleworkers.txt"
     initialize_logger(filename=log_file, file_level=args.log_level, stream_level=args.log_level)
 
     # SET parameters
@@ -118,7 +119,7 @@ if __name__ == '__main__':
     if num_processes == 1:
         # Load dataset
         X_train, Y_train, X_test, Y_test = load_fashion_mnist_data(args.n_training_samples, args.n_testing_samples)
-        validate_every = int((X_train.shape[0] // args.batch_size) * num_workers)
+        validate_every = int(X_train.shape[0] // args.batch_size)
         data = Data(batch_size=args.batch_size,
                     x_train=X_train, y_train=Y_train,
                     x_test=X_test, y_test=Y_test)
@@ -136,7 +137,7 @@ if __name__ == '__main__':
 
             X_train, Y_train, X_test, Y_test = load_fashion_mnist_data(args.n_training_samples,
                                                                                args.n_testing_samples)
-            validate_every = int((X_train.shape[0] // args.batch_size) * num_workers)
+            validate_every = int(X_train.shape[0] // args.batch_size)
             partitions = shared_partitions(X_train.shape[0], num_workers, args.batch_size)
             data = Data(batch_size=args.batch_size,
                         x_train=X_train[partitions[rank - 1]], y_train=Y_train[partitions[rank - 1]],
@@ -151,7 +152,7 @@ if __name__ == '__main__':
             X_train, Y_train,  X_test, Y_test = load_fashion_mnist_data(args.n_training_samples,
                                                                     args.n_testing_samples)
 
-            validate_every = int((X_train.shape[0] // args.batch_size) * (num_workers//2))
+            validate_every = int(X_train.shape[0] // args.batch_size)
             data = Data(batch_size=args.batch_size,
                         x_train=X_train, y_train=Y_train,
                         x_test=X_test, y_test=Y_test)
@@ -161,7 +162,7 @@ if __name__ == '__main__':
     if args.mode == 'easgd':
         algo = Algo(None, loss=args.loss, validate_every=validate_every,
                     mode='easgd', sync_every=args.sync_every,
-                    elastic_force=args.elastic_force / (num_workers),
+                    elastic_force=args.elastic_force / num_workers,
                     elastic_lr=args.elastic_lr, lr=args.lr,
                     elastic_momentum=args.elastic_momentum)
     elif args.mode == 'gem':
@@ -182,21 +183,23 @@ if __name__ == '__main__':
 
     # Model architecture higgs
     # dimensions = (28, 1000, 1000, 1000, 2)
-    if rank==0:
+
+    # Instantiate SET model
+    if rank == 0:
         from models.set_mlp_mpi_master import *
         model = MPIModel(model=SET_MLP(dimensions, (Relu, Relu, Relu, Softmax), **model_config))
     else:
         from models.set_mlp_mpi import *
         model = MPIModel(model=SET_MLP(dimensions, (Relu, Relu, Relu, Softmax), **model_config))
 
-    save_filename = "Results/set_mlp_fix_mpi_fashionmnist_" + str(args.n_training_samples) + "_training_samples_e" + \
+    save_filename = "Results/sync_every_2_set_mlp_mpi_fashionmnist_" + str(args.n_training_samples) + "_training_samples_e" + \
                     str(args.epsilon) + "_rand" + str(1) + "_process_" + str(rank) + "_num_workers_" + str(num_workers)
 
     # Creating the MPIManager object causes all needed worker and master nodes to be created
     manager = MPIManager(comm=comm, data=data, algo=algo, model=model,
                          num_epochs=args.epochs, num_masters=args.masters,
                          num_processes=args.processes, synchronous=args.synchronous,
-                         verbose=args.verbose, monitor=args.monitor, save_filename=save_filename)
+                         monitor=args.monitor, save_filename=save_filename)
 
     # Process 0 launches the training procedure
     if rank == 0:

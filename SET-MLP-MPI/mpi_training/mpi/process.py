@@ -17,7 +17,6 @@ from mpi_training.logger import get_logger, set_logging_prefix
 class MPIProcess(object):
     """Base class for processes that communicate with one another via MPI.
        Attributes:
-           verbose: display verbose output
            parent_comm: MPI intracommunicator used to communicate with this process's parent
            parent_rank (integer): rank of this node's parent in parent_comm
            rank (integer): rank of this node in parent_comm
@@ -34,7 +33,7 @@ class MPIProcess(object):
     """
 
     def __init__(self, parent_comm, process_comm, parent_rank=None, num_epochs=1, data=None, algo=None,
-                 model=None, verbose=False, monitor=False, save_filename=None,):
+                 model=None, monitor=False, save_filename=None,):
         """If the rank of the parent is given, initialize this process and immediately start
             training. If no parent is indicated, training should be launched with train().
 
@@ -45,7 +44,6 @@ class MPIProcess(object):
               data: Data object used to generate training or validation data
               algo: Algo object used to configure the training process
               model_builder: ModelBuilder object specifying model
-              verbose: whether to print verbose output
               monitor: whether to monitor CPU/GPU usage
         """
         self.parent_comm = parent_comm
@@ -55,7 +53,6 @@ class MPIProcess(object):
         self.data = data
         self.algo = algo
         self.model = model
-        self.verbose = verbose
         self.save_filename = save_filename
         self.idle_time = 0.0
 
@@ -391,7 +388,7 @@ class MPIWorker(MPIProcess):
     """This class trains its NN model and exchanges weight updates with its parent."""
 
     def __init__(self, data, algo, model, process_comm,parent_comm, parent_rank=None,
-                 num_epochs=1, verbose=False, monitor=False, save_filename=None):
+                 num_epochs=1, monitor=False, save_filename=None):
         """Raises an exception if no parent rank is provided. Sets the number of epochs
             using the argument provided, then calls the parent constructor"""
         info = "Creating MPIWorker with rank {0} and parent rank {1} on a communicator of size {2}"
@@ -402,7 +399,7 @@ class MPIWorker(MPIProcess):
 
         super(MPIWorker, self).__init__(parent_comm, process_comm, parent_rank,
                                         num_epochs=num_epochs, data=data, algo=algo, model=model,
-                                        verbose=verbose, monitor=monitor, save_filename=save_filename)
+                                        monitor=monitor, save_filename=save_filename)
 
     def build_model(self):
         super(MPIWorker, self).build_model()
@@ -552,7 +549,7 @@ class MPIMaster(MPIProcess):
 
     def __init__(self, parent_comm, parent_rank=None, child_comm=None,
                  num_epochs=1, data=None, algo=None, model=None,
-                 num_sync_workers=1, verbose=False, monitor=False, save_filename=None,):
+                 num_sync_workers=1,monitor=False, save_filename=None,):
         """Parameters:
               child_comm: MPI communicator used to contact children"""
         if child_comm is None:
@@ -567,7 +564,7 @@ class MPIMaster(MPIProcess):
         self.biases_to_save = []
 
         self.num_workers = child_comm.Get_size() - 1  # all processes but one are workers
-        self.metrics = np.zeros((num_epochs // (self.num_workers//2) + 1, 4))
+        self.metrics = np.zeros((num_epochs // (self.num_workers) + 1, 4))
 
         self.num_sync_workers = num_sync_workers
         info = ("Creating MPIMaster with rank {0} and parent rank {1}. "
@@ -579,7 +576,7 @@ class MPIMaster(MPIProcess):
 
         super(MPIMaster, self).__init__(parent_comm, process_comm=None, parent_rank=parent_rank, data=data,
                                         algo=algo, model=model, num_epochs=num_epochs, save_filename=save_filename,
-                                        verbose=verbose, monitor=monitor)
+                                        monitor=monitor)
 
     def decide_whether_to_sync(self):
         """Check whether enough workers have sent updates"""
@@ -665,10 +662,10 @@ class MPIMaster(MPIProcess):
                             self.biases_to_save.append(self.weights['b'])
 
                             self.validate(self.weights)
-                            if self.epoch < self.num_epochs//(self.num_workers//2) - 1:
+                            if self.epoch < self.num_epochs//(self.num_workers) - 1:
                                 t5 = datetime.datetime.now()
 
-                                self.model.weight_evolution()
+                                #self.model.weight_evolution()
                                 t6 = datetime.datetime.now()
                                 self.logger.info(f"Weights evolution time  {t6 - t5}")
                                 self.weights = self.model.get_weights()

@@ -144,6 +144,7 @@ class MPIProcess(object):
         self.idle_time += (t2 - t1).total_seconds()
 
         self.algo.set_worker_model_weights(self.model, self.weights, self.gradients)
+        self.update = {}
 
     def apply_update(self):
         """Updates weights according to update received from worker process"""
@@ -279,7 +280,7 @@ class MPIProcess(object):
     def recv_arrays(self, obj, tag, comm=None, source=None):
         return self.recv(obj, tag, comm=comm, source=source)
 
-    def recv_weights(self, comm=None, source=None, add_to_existing=False):
+    def recv_weights(self, comm=None, source=None):
         """Receive NN weights layer by layer from the process specified by comm and source"""
         if self.is_shadow(): return
         return self.recv_arrays(self.weights, tag='weights', comm=comm, source=source)
@@ -409,10 +410,21 @@ class MPIWorker(MPIProcess):
                     if self.process_comm.Get_rank() != 0:
                         self.model.set_weights(self.weights)
 
-                self.update = self.model.train_on_batch(x=self.data.x_train[k:l], y=self.data.y_train[k:l])
+
 
                 if self.algo.should_sync():
+                    self.update = self.model.train_on_batch(x=self.data.x_train[k:l], y=self.data.y_train[k:l])
                     self.sync_with_parent()
+                else:
+                    tmp = self.model.train_on_batch(x=self.data.x_train[k:l], y=self.data.y_train[k:l])
+                    for index, v in tmp.items():
+                        dw = v[0]
+                        delta = v[1]
+
+                        if index not in self.update:
+                            self.update[index] = (dw, delta)
+                        else:
+                            self.update[index] = (self.update[index][0] + dw, self.update[index][1] + delta)
 
             if self.monitor:
                 self.monitor.stop_monitor()

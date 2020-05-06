@@ -37,6 +37,7 @@ from scipy.sparse import lil_matrix
 from scipy.sparse import coo_matrix
 from scipy.sparse import dok_matrix
 from scipy.sparse import csr_matrix
+from keras.preprocessing.image import ImageDataGenerator
 from models.nn_functions import *
 # the "sparseoperations" Cython library was tested in Ubuntu 16.04. Please note that you may encounter some "solvable" issues if you compile it in Windows.
 import sparseoperations
@@ -374,6 +375,112 @@ class SET_MLP:
         np.savez_compressed(self.save_filename + "_weights.npz", *weights)
         np.savez_compressed(self.save_filename + "_biases.npz", *biases)
 
+        return metrics
+
+    def fit_generator(self, x, y_true, x_test, y_test, testing=True, save_filename=""):
+        """
+        :param x: (array) Containing parameters
+        :param y_true: (array) Containing one hot encoded labels.
+        :return (array) A 2D array of metrics (epochs, 3).
+        """
+        if not x.shape[0] == y_true.shape[0]:
+            raise ValueError("Length of x and y arrays don't match")
+        x = x.reshape(-1, 32, 32, 3)
+        # data augmentation
+        datagen = ImageDataGenerator(
+            featurewise_center=False,  # set input mean to 0 over the dataset
+            samplewise_center=False,  # set each sample mean to 0
+            featurewise_std_normalization=False,  # divide inputs by std of the dataset
+            samplewise_std_normalization=False,  # divide each input by its std
+            zca_whitening=False,  # apply ZCA whitening
+            zca_epsilon=1e-06,  # epsilon for ZCA whitening
+            rotation_range=0,  # randomly rotate images in the range (degrees, 0 to 180)
+            # randomly shift images horizontally (fraction of total width)
+            width_shift_range=0.1,
+            # randomly shift images vertically (fraction of total height)
+            height_shift_range=0.1,
+            shear_range=0.,  # set range for random shear
+            zoom_range=0.,  # set range for random zoom
+            channel_shift_range=0.,  # set range for random channel shifts
+            # set mode for filling points outside the input boundaries
+            fill_mode='nearest',
+            cval=0.,  # value used for fill_mode = "constant"
+            horizontal_flip=True,  # randomly flip images
+            vertical_flip=False,  # randomly flip images
+            # set rescaling factor (applied before any other transformation)
+            rescale=None,
+            # set function that will be applied on each input
+            preprocessing_function=None,
+            # image data format, either "channels_first" or "channels_last"
+            data_format=None,
+            # fraction of images reserved for validation (strictly between 0 and 1)
+            validation_split=0.0
+        )
+        datagen.fit(x)
+        # Initiate the loss object with the final activation function
+        self.save_filename = save_filename
+        self.inputLayerConnections = []
+        self.inputLayerConnections.append(self.getCoreInputConnections())
+        np.savez_compressed(self.save_filename + "_input_connections.npz",
+                            inputLayerConnections=self.inputLayerConnections)
+        maximum_accuracy = 0
+        metrics = np.zeros((self.epochs, 4))
+        weights = []
+        biases = []
+        for i in range(self.epochs):
+            # Shuffle the data
+            seed = np.arange(x.shape[0])
+            np.random.shuffle(seed)
+            x_ = x[seed]
+            y_ = y_true[seed]
+            # training
+            t1 = datetime.datetime.now()
+            output_generator = datagen.flow(x_, y_, batch_size=x.shape[0])
+            x_b, y_b = next(output_generator)
+            x_b = x_b.reshape(-1, 32 * 32 * 3).astype('float64')
+            for j in range(x_b.shape[0] // self.batch_size):
+                k = j * self.batch_size
+                l = (j + 1) * self.batch_size
+                z, a, masks = self._feed_forward(x_b[k:l], True)
+                self._back_prop(z, a, masks, y_b[k:l])
+            t2 = datetime.datetime.now()
+            print("\nSET-MLP Epoch ", i)
+            print("Training time: ", t2 - t1)
+            # test model performance on the test data at each epoch
+            # this part is useful to understand model performance and can be commented for production settings
+            if (testing):
+                t3 = datetime.datetime.now()
+                accuracy_test, activations_test = self.predict(x_test, y_test)
+                accuracy_train, activations_train = self.predict(x.reshape(-1, 32 * 32 * 3).astype('float64'), y_true)
+                t4 = datetime.datetime.now()
+                maximum_accuracy = max(maximum_accuracy, accuracy_test)
+                loss_test = self.loss.loss(y_test, activations_test)
+                loss_train = self.loss.loss(y_true, activations_train)
+                metrics[i, 0] = loss_train
+                metrics[i, 1] = loss_test
+                metrics[i, 2] = accuracy_train
+                metrics[i, 3] = accuracy_test
+                print(f"Testing time: {t4 - t3}\n; Loss test: {loss_test}; \n"
+                      f"Accuracy test: {accuracy_test}; \n"
+                      f"Maximum accuracy val: {maximum_accuracy}")
+            weights.append(self.w)
+            biases.append(self.b)
+            t5 = datetime.datetime.now()
+            if (i < self.epochs - 1):  # do not change connectivity pattern after the last epoch
+                # self.weightsEvolution_I() # this implementation is more didactic, but slow.
+                self.weightsEvolution_II()  # this implementation has the same behaviour as the one above, but it is much faster.
+            t6 = datetime.datetime.now()
+            print("Weights evolution time ", t6 - t5)
+            K.clear_session()
+            print(self.w[1].count_nonzero())
+            print(self.w[2].count_nonzero())
+            print(self.w[3].count_nonzero())
+            print(self.w[4].count_nonzero())
+            # save performance metrics values in a file
+            if (self.save_filename != ""):
+                np.savetxt(self.save_filename + ".txt", metrics)
+        np.savez_compressed(self.save_filename + "_weights.npz", *weights)
+        np.savez_compressed(self.save_filename + "_biases.npz", *biases)
         return metrics
 
     def getCoreInputConnections(self):

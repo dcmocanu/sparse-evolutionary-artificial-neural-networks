@@ -189,12 +189,11 @@ def retain_valid_weights(correct_weights, new_weights):
     Ka = Ia * cols + Ja
     Kb = Ib * cols + Jb
 
-    # indices = list(set(Kb).intersection(set(Ka)))
+    indices = np.setdiff1d(Kb, Ka, assume_unique=True)
     if Ka != Kb:
-        # rows, cols = np.unravel_index(indices, new_weights.shape)
-        # correct_weights = correct_weights.tolil()
-        # correct_weights[rows, cols] = new_weights[rows, cols]
-        raise AssertionError()
+        rows, cols = np.unravel_index(indices, new_weights.shape)
+        correct_weights = correct_weights.tolil()
+        correct_weights[rows, cols] = new_weights[rows, cols]
 
     return correct_weights.tocsr()
 

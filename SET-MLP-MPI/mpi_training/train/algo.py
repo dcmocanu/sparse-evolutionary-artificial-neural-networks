@@ -98,6 +98,10 @@ class Algo(object):
             update['pdd'] = new_weights['pdd']
             return update
 
+    ### For Worker ###
+    def compute_update_gem(self, update):
+        return self.optimizer.begin_compute_update(update)
+
     def compute_update_worker(self, weights, update):
         """Compute the update on worker (for GEM)"""
         if self.mode == 'gem':  # Only possible in GEM mode
@@ -115,12 +119,12 @@ class Algo(object):
     def get_elastic_update(self, cur_weights, other_weights):
         """EASGD weights update"""
 
-        for index, weights in other_weights['w'].items():
-            if index in cur_weights['pdw']:
-                cur_weights['pdw'][index] = retain_valid_updates(other_weights['w'][index], cur_weights['pdw'][index])
+        # for index, weights in other_weights['w'].items():
+        #     if index in cur_weights['pdw']:
+        #         cur_weights['pdw'][index] = retain_valid_updates(other_weights['w'][index], cur_weights['pdw'][index])
 
         for index, v in other_weights['w'].items():
-            cur_weights['w'][index] = retain_valid_weights(other_weights['w'][index], cur_weights['w'][index])
+            #cur_weights['w'][index] = retain_valid_weights(other_weights['w'][index], cur_weights['w'][index])
             cur_weights['w'][index] = cur_weights['w'][index] - self.elastic_force * (cur_weights['w'][index] - other_weights['w'][index])
         for index, v in other_weights['b'].items():
             cur_weights['b'][index] = cur_weights['b'][index] - self.elastic_force * (cur_weights['b'][index] - other_weights['b'][index])
@@ -146,7 +150,7 @@ class Algo(object):
         """EASGD weights update"""
 
         for index, v in other_weights['w'].items():
-            other_weights['w'][index] = retain_valid_weights(cur_weights['w'][index], other_weights['w'][index])
+            #other_weights['w'][index] = retain_valid_weights(cur_weights['w'][index], other_weights['w'][index])
             cur_weights['w'][index] = cur_weights['w'][index] + self.elastic_force * (other_weights['w'][index] - cur_weights['w'][index])
         for index, v in other_weights['b'].items():
             cur_weights['b'][index] = cur_weights['b'][index] + self.elastic_force * (other_weights['b'][index] - cur_weights['b'][index])

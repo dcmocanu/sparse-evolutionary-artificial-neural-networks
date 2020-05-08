@@ -122,6 +122,8 @@ class SET_MLP:
         # Weights and biases are initiated by index. For a one hidden layer net you will have a w[1] and w[2]
         self.w = {}
         self.b = {}
+        self.pdw = {}
+        self.pdd = {}
         self.activations = {}
 
         # t1 = datetime.datetime.now()
@@ -154,7 +156,9 @@ class SET_MLP:
 
         params = {
             'w': self.w,
-            'b': self.b
+            'b': self.b,
+            'pdw': self.pdw,
+            'pdd': self.pdd,
         }
 
         return params
@@ -162,6 +166,8 @@ class SET_MLP:
     def set_parameters(self, params):
         self.w = params['w']
         self.b = params['b']
+        self.pdw = params['pdw']
+        self.pdd = params['pdd']
 
     def dropout(self, x, rate):
 

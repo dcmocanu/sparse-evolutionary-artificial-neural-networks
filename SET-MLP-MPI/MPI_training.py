@@ -50,11 +50,11 @@ if __name__ == '__main__':
     # Configuration of training process
     parser.add_argument('--loss', help='loss function', default='cross_entropy')
     parser.add_argument('--sync-every', help='how often to sync weights with master',
-                        default=2, type=int, dest='sync_every')
+                        default=5, type=int, dest='sync_every')
     parser.add_argument('--mode', help='Mode of operation.'
                         'One of "sgd" (Stohastic Gradient Descent), "sgdm" (Stohastic Gradient Descent with Momentum),'
                         '"easgd" (Elastic Averaging SGD) or "gem" (Gradient Energy Matching)',
-                        default='sgdm')
+                        default='gem')
     parser.add_argument('--elastic-force', help='beta parameter for EASGD', type=float, default=0.9)
     parser.add_argument('--elastic-lr', help='worker SGD learning rate for EASGD',
                         type=float, default=1.0, dest='elastic_lr')
@@ -91,11 +91,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    # Initialize logger
-    log_file = "Results2/sync_every_2_set_mlp_mpi_fashionmnist_" + str(args.n_training_samples) + "_training_samples_e" + \
-                    str(args.epsilon) + "_rand" + str(1) + "_logs_execution_singleworkers.txt"
-    initialize_logger(filename=log_file, file_level=args.log_level, stream_level=args.log_level)
-
     # SET parameters
     model_config = {
         'batch_size': args.batch_size,
@@ -115,6 +110,15 @@ if __name__ == '__main__':
     rank = comm.Get_rank()
     num_processes = comm.Get_size()
     num_workers = num_processes - 1
+
+    # Initialize logger
+    base_file_name = "Results2/gem_set_mlp_mpi_fashionmnist_" + str(args.n_training_samples) + "_training_samples_e" + \
+                    str(args.epsilon) + "_rand" + str(1) + "_num_workers_" + str(num_workers)
+    log_file = base_file_name + "_logs_execution.txt"
+
+    save_filename = base_file_name + "_process_" + str(rank)
+
+    initialize_logger(filename=log_file, file_level=args.log_level, stream_level=args.log_level)
 
     if num_processes == 1:
         # Load dataset
@@ -166,7 +170,7 @@ if __name__ == '__main__':
                     elastic_lr=args.elastic_lr, lr=args.lr,
                     elastic_momentum=args.elastic_momentum)
     elif args.mode == 'gem':
-        algo = Algo('gem', loss=args.loss, validate_every=validate_every,
+        algo = Algo('gem', validate_every=validate_every,
                     mode='gem', sync_every=args.sync_every,
                     learning_rate=args.gem_lr, momentum=args.gem_momentum, kappa=args.gem_kappa)
     elif args.mode == 'sgdm':
@@ -191,9 +195,6 @@ if __name__ == '__main__':
     else:
         from models.set_mlp_mpi import *
         model = MPIModel(model=SET_MLP(dimensions, (Relu, Relu, Relu, Softmax), **model_config))
-
-    save_filename = "Results2/sync_every_2_set_mlp_mpi_fashionmnist_" + str(args.n_training_samples) + "_training_samples_e" + \
-                    str(args.epsilon) + "_rand" + str(1) + "_process_" + str(rank) + "_num_workers_" + str(num_workers)
 
     # Creating the MPIManager object causes all needed worker and master nodes to be created
     manager = MPIManager(comm=comm, data=data, algo=algo, model=model,

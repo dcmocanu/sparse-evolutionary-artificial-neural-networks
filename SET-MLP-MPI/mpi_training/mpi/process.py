@@ -356,7 +356,7 @@ class MPIWorker(MPIProcess):
             self.compute_update()
 
         if self.algo.mode == 'gem':
-            self.compute_update()
+            self.algo.compute_update_gem(self.update)
             self.do_gem_sequence()
         else:
             self.do_send_sequence()
@@ -373,11 +373,12 @@ class MPIWorker(MPIProcess):
          -Send the update to master and apply it to own weights
         """
         self.notify_parent()
-        self.recv_weights()
+        self.weights = self.recv_weights()
         self.update = self.algo.compute_update_worker(self.weights, self.update)
         self.send_update()
+
         self.apply_update()
-        self.algo.set_worker_model_weights(self.model, self.weights)
+        self.update = {}
 
     def train(self, testing=False):
         """  Wait for the signal to train. Then train for num_epochs epochs.
@@ -410,21 +411,18 @@ class MPIWorker(MPIProcess):
                     if self.process_comm.Get_rank() != 0:
                         self.model.set_weights(self.weights)
 
+                tmp = self.model.train_on_batch(x=self.data.x_train[k:l], y=self.data.y_train[k:l])
+                for index, v in tmp.items():
+                    dw = v[0]
+                    delta = v[1]
 
+                    if index not in self.update:
+                        self.update[index] = (dw, delta)
+                    else:
+                        self.update[index] = (self.update[index][0] + dw, self.update[index][1] + delta)
 
                 if self.algo.should_sync():
-                    self.update = self.model.train_on_batch(x=self.data.x_train[k:l], y=self.data.y_train[k:l])
                     self.sync_with_parent()
-                else:
-                    tmp = self.model.train_on_batch(x=self.data.x_train[k:l], y=self.data.y_train[k:l])
-                    for index, v in tmp.items():
-                        dw = v[0]
-                        delta = v[1]
-
-                        if index not in self.update:
-                            self.update[index] = (dw, delta)
-                        else:
-                            self.update[index] = (self.update[index][0] + dw, self.update[index][1] + delta)
 
             if self.monitor:
                 self.monitor.stop_monitor()
@@ -587,7 +585,7 @@ class MPIMaster(MPIProcess):
                                 self.logger.info(self.weights['w'][2].count_nonzero())
                                 self.logger.info(self.weights['w'][3].count_nonzero())
                                 self.logger.info(self.weights['w'][4].count_nonzero())
-                                self.model.model.weightsEvolution_III()
+                                #self.model.model.weightsEvolution_III()
                                 t6 = datetime.datetime.now()
                                 self.logger.info(f"Weights evolution time  {t6 - t5}")
 

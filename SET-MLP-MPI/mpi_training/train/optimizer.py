@@ -85,74 +85,101 @@ class GEM(Optimizer):
         kappa: Proxy amplification. Experimental results show 2 is a good value.
         """
 
-    def __init__(self, learning_rate=0.05, momentum=0.9, kappa=1.0):
+    def __init__(self, learning_rate=0.01, momentum=0.9, kappa=1.0):
         super(GEM, self).__init__()
         self.learning_rate = learning_rate
         self.momentum = momentum
         self.kappa = kappa
-        self.epsilon = 10e-13
+        self.epsilon = 1e-16
 
-        self.central_variable_moment = None
-        self.stale = None
-        self.moment = None
+        self.central_variable_moment = {'w': {}, 'b': {}}
+        self.stale = {'w': {}, 'b': {}}
+        self.moment = {'pdw': {}, 'pdd': {}}
 
-        self.tensors_initialized = False
+    def begin_compute_update(self, gradient):
 
-    def init_tensors(self, weights):
-        if not self.tensors_initialized:
-            self.central_variable_moment = [ np.zeros_like(w) for w in weights ]
-            self.stale = [ np.zeros_like(w) for w in weights ]
-            self.moment = [ np.zeros_like(w) for w in weights ]
+        for index, v in gradient.items():
+            dw = v[0]
+            delta = v[1]
 
-            self.tensors_initialized = True
-
-    def begin_compute_update(self, cur_weights, new_weights):
-        self.init_tensors(cur_weights)
-
-        update = []
-
-        for idx, (cur_w, new_w) in enumerate(zip(cur_weights, new_weights)):
-            update.append( np.subtract( cur_w, new_w ))
-            update[idx] *= -self.learning_rate
-            # Update the states with the current gradient.
-            self.moment[idx] *= self.momentum
-            self.moment[idx] += update[idx]
-
-        return update
+            if index not in self.moment['pdw']:
+                self.moment['pdw'][index] = - self.learning_rate * dw
+                self.moment['pdd'][index] = - self.learning_rate * delta
+            else:
+                self.moment['pdw'][index] = self.momentum * self.moment['pdw'][index] - self.learning_rate * dw
+                self.moment['pdd'][index] = self.momentum * self.moment['pdd'][index] - self.learning_rate * delta
 
     def gradient_energy_matching(self, gradient):
-        Pi = [] # Pi tensors for all parameters.
+        update_gem = {}
 
-        for idx, g in enumerate(gradient):
-            proxy = self.kappa * np.abs(self.moment[idx])
-            central_variable = np.abs(self.central_variable_moment[idx])
-            update = np.abs(g + self.epsilon)
-            pi = (proxy - central_variable) / update
-            np.clip(pi, 0., 5., out=pi) # For numerical stability.
-            Pi.append(pi)
+        for idx, v in gradient.items():
+            dw = - self.learning_rate * v[0]
+            delta = - self.learning_rate * v[1]
 
-        return Pi
+            proxy = self.kappa * np.abs(self.moment['pdw'][idx])
+
+            central_variable = np.abs(self.central_variable_moment['w'][idx])
+
+            update = np.abs(dw)
+            pi_w = sparse_divide_nonzero(proxy - central_variable, update)
+            pi_w.data[np.isnan(pi_w.data)] = self.epsilon
+            np.clip(pi_w.data, 0., 5., out=pi_w.data)  # For numerical stability.
+
+            proxy = self.kappa * np.abs(self.moment['pdd'][idx])
+            central_variable = np.abs(self.central_variable_moment['b'][idx])
+            update = np.abs(delta)
+            pi_b = (proxy - central_variable) / (update + self.epsilon)
+            np.clip(pi_b, 0., 5., out=pi_b)  # For numerical stability.
+
+            update_gem[idx] = pi_w.multiply(dw), pi_b * delta
+
+        return update_gem
 
     def compute_update(self, weights, gradient):
-        for idx, w in enumerate(weights):
-            self.central_variable_moment[idx] = (w - self.stale[idx])
-            self.stale[idx] = np.copy(w)
 
-        update = []
+        for idx, b in weights['b'].items():
+            if idx in self.stale['b']:
+                self.central_variable_moment['b'][idx] = (b - self.stale['b'][idx])
+            else:
+                self.central_variable_moment['b'][idx] = np.zeros_like(b)
+            self.stale['b'][idx] = np.copy(b)
 
-        pi = self.gradient_energy_matching(gradient)
-        # Apply the scalars to the update.
-        for idx, g in enumerate(gradient):
-            update.append(np.multiply(g, pi[idx]))
+        for idx, w in weights['w'].items():
+            if idx in self.stale['w']:
+                self.central_variable_moment['w'][idx] = (w - self.stale['w'][idx])
+            else:
+                self.central_variable_moment['w'][idx] = sparse.csr_matrix(w.shape, dtype='float64')
+            self.stale['w'][idx] = w.copy()
+
+        update = self.gradient_energy_matching(gradient)
 
         return update
 
-    def apply_update(self, weights, update):
+    def apply_update(self, weights, gradient):
         """Add the update to the weights."""
-        new_weights = []
-        for w, u in zip(weights, update):
-            new_weights.append(np.add(w, u))
-        return new_weights
+
+        for index, v in gradient.items():
+            dw = v[0]
+            delta = v[1]
+
+            # perform the update with momentum
+            if index not in weights['pdw']:
+                weights['pdw'][index] = dw
+                weights['pdd'][index] = delta
+            else:
+                weights['pdw'][index] = self.momentum * weights['pdw'][index] + dw
+                weights['pdd'][index] = self.momentum * weights['pdd'][index] + delta
+
+            weights['w'][index] += weights['pdw'][index]  # - self.weight_decay * weights['w'][index]
+            weights['b'][index] += weights['pdd'][index]  # - self.weight_decay * weights['b'][index]
+
+        return weights
+
+
+def sparse_divide_nonzero(a, b):
+    inv_b = b.copy()
+    inv_b.data = 1 / (inv_b.data + 1e-16)
+    return a.multiply(inv_b)
 
 
 def get_optimizer(name):
@@ -190,7 +217,7 @@ def retain_valid_weights(correct_weights, new_weights):
     Kb = Ib * cols + Jb
 
     indices = np.setdiff1d(Kb, Ka, assume_unique=True)
-    if Ka != Kb:
+    if len(indices) != 0:
         rows, cols = np.unravel_index(indices, new_weights.shape)
         correct_weights = correct_weights.tolil()
         correct_weights[rows, cols] = new_weights[rows, cols]

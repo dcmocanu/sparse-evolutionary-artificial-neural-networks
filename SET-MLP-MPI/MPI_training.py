@@ -50,11 +50,11 @@ if __name__ == '__main__':
     # Configuration of training process
     parser.add_argument('--loss', help='loss function', default='cross_entropy')
     parser.add_argument('--sync-every', help='how often to sync weights with master',
-                        default=5, type=int, dest='sync_every')
+                        default=3, type=int, dest='sync_every')
     parser.add_argument('--mode', help='Mode of operation.'
                         'One of "sgd" (Stohastic Gradient Descent), "sgdm" (Stohastic Gradient Descent with Momentum),'
                         '"easgd" (Elastic Averaging SGD) or "gem" (Gradient Energy Matching)',
-                        default='gem')
+                        default='easgd')
     parser.add_argument('--elastic-force', help='beta parameter for EASGD', type=float, default=0.9)
     parser.add_argument('--elastic-lr', help='worker SGD learning rate for EASGD',
                         type=float, default=1.0, dest='elastic_lr')
@@ -71,9 +71,9 @@ if __name__ == '__main__':
     parser.add_argument('--log-level', default='info', dest='log_level', help='log level (debug, info, warn, error)')
 
     # Model configuration
-    parser.add_argument('--batch-size', type=int, default=100, help='input batch size for training (default: 64)')
+    parser.add_argument('--batch-size', type=int, default=1000, help='input batch size for training (default: 64)')
     parser.add_argument('--epochs', type=int, default=200,  help='number of epochs to train (default: 10)')
-    parser.add_argument('--lr', type=float, default=0.01, help='learning rate (default: 0.01)')
+    parser.add_argument('--lr', type=float, default=0.05, help='learning rate (default: 0.01)')
     parser.add_argument('--lr-rate-decay', type=float, default=0.0, help='learning rate decay (default: 0)')
     parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum (default: 0.5)')
     parser.add_argument('--dropout-rate', type=float, default=0.3, help='Dropout rate')

@@ -41,11 +41,13 @@ from keras.preprocessing.image import ImageDataGenerator
 from keras import backend as K
 from models.nn_functions import *
 # the "sparseoperations" Cython library was tested in Ubuntu 16.04. Please note that you may encounter some "solvable" issues if you compile it in Windows.
-import sparseoperations
+import sparsebackpropagation
 import datetime
 import os
 import sys
 import numpy as np
+import functools
+import itertools
 
 stderr = sys.stderr
 sys.stderr = open(os.devnull, 'w')
@@ -76,7 +78,7 @@ def createSparseWeights(epsilon, noRows, noCols):
     mask_weights = np.random.rand(noRows, noCols)
     prob = 1 - (epsilon * (noRows + noCols)) / (noRows * noCols)  # normal tp have 8x connections
     # generate an Erdos Renyi sparse weights mask
-    weights = lil_matrix((noRows, noCols))
+    weights = lil_matrix((noRows, noCols), dtype='float32')
     n_params = np.count_nonzero(mask_weights[mask_weights >= prob])
     weights[mask_weights >= prob] = np.random.uniform(-limit, limit, n_params)
     print("Create sparse matrix with ", weights.getnnz(), " connections and ",
@@ -132,13 +134,13 @@ class SET_MLP:
 
         for i in range(len(dimensions) - 2):
             self.w[i + 1] = createSparseWeights(self.epsilon, dimensions[i], dimensions[i + 1])  #create sparse weight matrices
-            self.b[i + 1] = np.zeros(dimensions[i + 1])
+            self.b[i + 1] = np.zeros(dimensions[i + 1], dtype='float32')
             self.activations[i + 2] = activations[i]
 
         limit = np.sqrt(6. / float(dimensions[-2] + dimensions[-1]))
         self.w[len(dimensions) - 1] = csr_matrix(np.random.uniform(-limit, limit,
-                                                                   (dimensions[-2], dimensions[-1])))
-        self.b[len(dimensions) - 1] = np.zeros(dimensions[-1])
+                                                                   (dimensions[-2], dimensions[-1])), dtype='float32')
+        self.b[len(dimensions) - 1] = np.zeros(dimensions[-1], dtype='float32')
         self.activations[len(dimensions)] = activations[-1]
 
         if config['loss'] == 'mse':
@@ -176,7 +178,7 @@ class SET_MLP:
         keep_prob = 1. - rate
         scale = 1 / keep_prob
         keep_mask = noise >= rate
-        return x * scale * keep_mask.astype('float64'), keep_mask.astype('float64')
+        return x * scale * keep_mask, keep_mask
 
     def _feed_forward(self, x, drop=False):
         """
@@ -190,7 +192,7 @@ class SET_MLP:
 
         # activations: f(z)
         a = {1: x}  # First layer has no activations as input. The input x is the input.
-        masks = {1: x}
+        masks = {}
 
         for i in range(1, self.n_layers):
             z[i + 1] = a[i] @ self.w[i] + self.b[i]
@@ -225,9 +227,9 @@ class SET_MLP:
         # Determine partial derivative and delta for the output layer.
         # delta output layer
         delta = self.loss.delta(y_true, a[self.n_layers])
-        dw = coo_matrix(self.w[self.n_layers - 1])
+        dw = coo_matrix(self.w[self.n_layers - 1], dtype='float32')
         # compute backpropagation updates
-        sparseoperations.backpropagation_updates_Cython(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
+        sparsebackpropagation.backpropagation_updates(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
 
         # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above. Please note that the running time will be much higher
         # backpropagation_updates_Numpy(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
@@ -248,10 +250,10 @@ class SET_MLP:
             else:
                 delta = (delta @ self.w[i].transpose()) * self.activations[i].prime(z[i])
 
-            dw = coo_matrix(self.w[i - 1])
+            dw = coo_matrix(self.w[i - 1], dtype='float32')
 
             # compute backpropagation updates
-            sparseoperations.backpropagation_updates_Cython(a[i - 1], delta, dw.row, dw.col, dw.data)
+            sparsebackpropagation.backpropagation_updates(a[i - 1], delta, dw.row, dw.col, dw.data)
             # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above. Please note that the running time will be much higher
             # backpropagation_updates_Numpy(a[i - 1], delta, dw.row, dw.col, dw.data)
 
@@ -276,8 +278,8 @@ class SET_MLP:
             self.pdw[index] = self.momentum * self.pdw[index] - self.learning_rate * dw
             self.pdd[index] = self.momentum * self.pdd[index] - self.learning_rate * delta
 
-        self.w[index] += self.pdw[index] # - self.weight_decay * self.w[index]
-        self.b[index] += self.pdd[index] # - self.weight_decay * self.b[index]
+        self.w[index] += self.pdw[index]  # - self.weight_decay * self.w[index]
+        self.b[index] += self.pdd[index]  # - self.weight_decay * self.b[index]
 
     def train_on_batch(self, x, y):
         z, a, masks = self._feed_forward(x, True)
@@ -423,7 +425,7 @@ class SET_MLP:
 
             for j in range(x.shape[0] // self.batch_size):
                 x_b, y_b = next(output_generator)
-                x_b = x_b.reshape(-1, 32 * 32 * 3).astype('float64')
+                x_b = x_b.reshape(-1, 32 * 32 * 3)
                 z, a, masks = self._feed_forward(x_b, True)
                 self._back_prop(z, a, masks, y_b)
             t2 = datetime.datetime.now()
@@ -434,7 +436,7 @@ class SET_MLP:
             if (testing):
                 t3 = datetime.datetime.now()
                 accuracy_test, activations_test = self.predict(x_test, y_test)
-                accuracy_train, activations_train = self.predict(x.reshape(-1, 32 * 32 * 3).astype('float64'), y_true)
+                accuracy_train, activations_train = self.predict(x.reshape(-1, 32 * 32 * 3), y_true)
                 t4 = datetime.datetime.now()
                 maximum_accuracy = max(maximum_accuracy, accuracy_test)
                 loss_test = self.loss.loss(y_test, activations_test)
@@ -476,7 +478,7 @@ class SET_MLP:
             int(min(values.shape[0] - 1, lastZeroPos + self.zeta * (values.shape[0] - lastZeroPos)))]
 
         wlil = self.w[1].tolil()
-        wdok = dok_matrix((self.dimensions[0], self.dimensions[1]), dtype="float64")
+        wdok = dok_matrix((self.dimensions[0], self.dimensions[1]), dtype="float32")
 
         # remove the weights closest to zero
         keepConnections = 0
@@ -501,8 +503,8 @@ class SET_MLP:
 
             wlil = self.w[i].tolil()
             pdwlil = self.pdw[i].tolil()
-            wdok = dok_matrix((self.dimensions[i - 1], self.dimensions[i]), dtype="float64")
-            pdwdok = dok_matrix((self.dimensions[i - 1], self.dimensions[i]), dtype="float64")
+            wdok = dok_matrix((self.dimensions[i - 1], self.dimensions[i]), dtype="float32")
+            pdwdok = dok_matrix((self.dimensions[i - 1], self.dimensions[i]), dtype="float32")
 
             # remove the weights closest to zero
             keepConnections = 0
@@ -568,11 +570,11 @@ class SET_MLP:
                 colsPDNew = colsPD[newPDRowColIndexFlag]
 
                 self.pdw[i] = coo_matrix((valsPDNew, (rowsPDNew, colsPDNew)),
-                                         (self.dimensions[i - 1], self.dimensions[i])).tocsr()
+                                         (self.dimensions[i - 1], self.dimensions[i]), dtype='float32').tocsr()
 
                 if(i==1):
                     self.inputLayerConnections.append(coo_matrix((valsWNew, (rowsWNew, colsWNew)),
-                                       (self.dimensions[i - 1], self.dimensions[i])).getnnz(axis=1))
+                                       (self.dimensions[i - 1], self.dimensions[i]), dtype='float32').getnnz(axis=1))
                     np.savez_compressed(self.save_filename + "_input_connections.npz",
                                         inputLayerConnections=self.inputLayerConnections)
 
@@ -609,7 +611,7 @@ class SET_MLP:
                 if (valsWNew.shape[0] != rowsWNew.shape[0]):
                     print("not good")
                 self.w[i] = coo_matrix((valsWNew, (rowsWNew, colsWNew)),
-                                       (self.dimensions[i - 1], self.dimensions[i])).tocsr()
+                                       (self.dimensions[i - 1], self.dimensions[i]), dtype='float32').tocsr()
 
                 # print("Number of non zeros in W and PD matrix after evolution in layer",i,[(self.w[i].data.shape[0]), (self.pdw[i].data.shape[0])])
 

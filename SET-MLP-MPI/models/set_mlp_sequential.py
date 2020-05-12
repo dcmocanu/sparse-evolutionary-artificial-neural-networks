@@ -580,10 +580,11 @@ class SET_MLP:
                 # add new random connections
                 keepConnections = np.size(rowsWNew)
                 lengthRandom = valsW.shape[0] - keepConnections
-                #limit = np.sqrt(6. / float(self.dimensions[i] + self.dimensions[i + 1]))
-                #randomVals = np.random.uniform(-limit, limit, lengthRandom)
-                randomVals = np.zeros(lengthRandom, dtype='float32')
-                zeroVals = 0 * randomVals  # explicit zeros
+                limit = np.sqrt(6. / float(self.dimensions[i - 1] + self.dimensions[i]))
+                randomVals = np.random.uniform(-limit, limit, lengthRandom)
+                #randomVals = np.zeros(lengthRandom, dtype='float32')
+                #randomVals = np.random.randn(lengthRandom) / 10  # to avoid multiple whiles, can we call 3*rand?
+                # zeroVals = 0 * randomVals  # explicit zeros
 
                 # adding  (wdok[ik,jk]!=0): condition
                 while (lengthRandom > 0):
@@ -640,5 +641,3 @@ class SET_MLP:
                 correct_classification += 1
         accuracy = correct_classification / y_test.shape[0]
         return accuracy, activations
-
-

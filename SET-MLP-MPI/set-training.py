@@ -86,7 +86,7 @@ if __name__ == "__main__":
         }
 
 
-        np.random.seed(0)
+        np.random.seed(5)
 
         # Load augmented dataset
         start_time = time.time()

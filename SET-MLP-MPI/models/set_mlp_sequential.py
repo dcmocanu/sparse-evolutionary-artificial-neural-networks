@@ -46,6 +46,8 @@ import datetime
 import os
 import sys
 import numpy as np
+import threading
+from numba import njit, jit
 import functools
 import itertools
 
@@ -174,11 +176,10 @@ class SET_MLP:
     def dropout(self, x, rate):
 
         noise_shape = x.shape
-        noise = np.random.uniform(0., 1., noise_shape)
-        keep_prob = 1. - rate
-        scale = 1 / keep_prob
-        keep_mask = noise >= rate
-        return x * scale * keep_mask, keep_mask
+        keep_prob = 1 - rate
+        noise = np.random.binomial(1, keep_prob, noise_shape) / keep_prob
+        noise = noise.astype('float32')
+        return x * noise, noise
 
     def _feed_forward(self, x, drop=False):
         """
@@ -186,7 +187,6 @@ class SET_MLP:
         :param x: (array) Batch of input data vectors.
         :return: (tpl) Node outputs and activations per layer. The numbering of the output is equivalent to the layer numbers.
         """
-        if self.dropout_rate > 0.0: drop = True
         # w(x) + b
         z = {}
 
@@ -235,7 +235,7 @@ class SET_MLP:
         # backpropagation_updates_Numpy(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
 
         update_params = {
-            self.n_layers - 1: (dw.tocsr(),  np.sum(delta, axis=0) / self.batch_size)
+            self.n_layers - 1: (dw.tocsr(),  np.mean(delta, axis=0))
         }
 
         # In case of three layer net will iterate over i = 2 and i = 1
@@ -246,7 +246,6 @@ class SET_MLP:
             if keep_prob != 1:
                 delta = (delta @ self.w[i].transpose()) * self.activations[i].prime(z[i])
                 delta = delta * masks[i]
-                delta /= keep_prob
             else:
                 delta = (delta @ self.w[i].transpose()) * self.activations[i].prime(z[i])
 
@@ -257,7 +256,7 @@ class SET_MLP:
             # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above. Please note that the running time will be much higher
             # backpropagation_updates_Numpy(a[i - 1], delta, dw.row, dw.col, dw.data)
 
-            update_params[i - 1] = (dw.tocsr(),  np.sum(delta, axis=0) / self.batch_size)
+            update_params[i - 1] = (dw.tocsr(),  np.mean(delta, axis=0))
         for k, v in update_params.items():
             self._update_w_b(k, v[0], v[1])
 
@@ -359,7 +358,7 @@ class SET_MLP:
             biases.append(self.b)
 
             t5 = datetime.datetime.now()
-            if (i < self.epochs - 1):  # do not change connectivity pattern after the last epoch
+            if (i < self.epochs - 1):# do not change connectivity pattern after the last epoch
 
                 # self.weightsEvolution_I() # this implementation is more didactic, but slow.
                 self.weightsEvolution_II()  # this implementation has the same behaviour as the one above, but it is much faster.
@@ -541,10 +540,10 @@ class SET_MLP:
                 rowsW = wcoo.row
                 colsW = wcoo.col
 
-                pdcoo = self.pdw[i].tocoo()
-                valsPD = pdcoo.data
-                rowsPD = pdcoo.row
-                colsPD = pdcoo.col
+                # pdcoo = self.pdw[i].tocoo()
+                # valsPD = pdcoo.data
+                # rowsPD = pdcoo.row
+                # colsPD = pdcoo.col
 
                 # print("Number of non zeros in W and PD matrix before evolution in layer",i,[np.size(valsW), np.size(valsPD)])
                 values = np.sort(self.w[i].data)
@@ -560,17 +559,17 @@ class SET_MLP:
                 rowsWNew = rowsW[(valsW > smallestPositive) | (valsW < largestNegative)]
                 colsWNew = colsW[(valsW > smallestPositive) | (valsW < largestNegative)]
 
-                newWRowColIndex = np.stack((rowsWNew, colsWNew), axis=-1)
-                oldPDRowColIndex = np.stack((rowsPD, colsPD), axis=-1)
+                # newWRowColIndex = np.stack((rowsWNew, colsWNew), axis=-1)
+                # oldPDRowColIndex = np.stack((rowsPD, colsPD), axis=-1)
 
-                newPDRowColIndexFlag = array_intersect(oldPDRowColIndex, newWRowColIndex)  # careful about order
-
-                valsPDNew = valsPD[newPDRowColIndexFlag]
-                rowsPDNew = rowsPD[newPDRowColIndexFlag]
-                colsPDNew = colsPD[newPDRowColIndexFlag]
-
-                self.pdw[i] = coo_matrix((valsPDNew, (rowsPDNew, colsPDNew)),
-                                         (self.dimensions[i - 1], self.dimensions[i]), dtype='float32').tocsr()
+                # newPDRowColIndexFlag = array_intersect(oldPDRowColIndex, newWRowColIndex)  # careful about order
+                #
+                # valsPDNew = valsPD[newPDRowColIndexFlag]
+                # rowsPDNew = rowsPD[newPDRowColIndexFlag]
+                # colsPDNew = colsPD[newPDRowColIndexFlag]
+                #
+                # self.pdw[i] = coo_matrix((valsPDNew, (rowsPDNew, colsPDNew)),
+                #                          (self.dimensions[i - 1], self.dimensions[i]), dtype='float32').tocsr()
 
                 if(i==1):
                     self.inputLayerConnections.append(coo_matrix((valsWNew, (rowsWNew, colsWNew)),
@@ -581,9 +580,9 @@ class SET_MLP:
                 # add new random connections
                 keepConnections = np.size(rowsWNew)
                 lengthRandom = valsW.shape[0] - keepConnections
-                limit = np.sqrt(6. / float(self.dimensions[i] + self.dimensions[i + 1]))
-                randomVals = np.random.uniform(-limit, limit, lengthRandom)
-                # randomVals = np.zeros(lengthRandom)
+                #limit = np.sqrt(6. / float(self.dimensions[i] + self.dimensions[i + 1]))
+                #randomVals = np.random.uniform(-limit, limit, lengthRandom)
+                randomVals = np.zeros(lengthRandom, dtype='float32')
                 zeroVals = 0 * randomVals  # explicit zeros
 
                 # adding  (wdok[ik,jk]!=0): condition
@@ -618,8 +617,8 @@ class SET_MLP:
                 # t_ev_2 = datetime.datetime.now()
                 # print("Weights evolution time for layer",i,"is", t_ev_2 - t_ev_1)
 
-        # self.pdw = {}
-        # self.pdd = {}
+        self.pdw = {}
+        self.pdd = {}
 
     def predict(self, x_test, y_test, batch_size=1):
         """

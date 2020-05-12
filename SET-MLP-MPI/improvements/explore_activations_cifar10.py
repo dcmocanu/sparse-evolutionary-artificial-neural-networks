@@ -41,8 +41,8 @@ def unweighted_graph_from_weight_masks(weight_masks):
 
 X_train, Y_train, X_test, Y_test = load_cifar10_data(50000, 10000)
 connections = np.load("../Results/set_mlp_sequential_softmax_mnist_60000_training_samples_e20_rand0_input_connections.npz")["inputLayerConnections"]
-weights = np.load("../Results/set_mlp_sequential_softmax_mnist_60000_training_samples_e20_rand0_weights.npz",  allow_pickle=True)
-biases = np.load("../Results/set_mlp_sequential_softmax_mnist_60000_training_samples_e20_rand0_biases.npz", allow_pickle=True)
+weights = np.load("../Results/set_mlp_sequential_cifar10_50000_training_samples_e20_rand0_weights.npz",  allow_pickle=True)
+biases = np.load("../Results/set_mlp_sequential_cifar10_50000_training_samples_e20_rand0_biases.npz", allow_pickle=True)
 w10 = weights['arr_9'].item()
 b10 = biases['arr_9'].item()
 
@@ -79,9 +79,19 @@ config = {
 set_mlp = SET_MLP((X_train.shape[1], 4000, 1000, 4000,
                            Y_train.shape[1]), (Relu, Relu, Relu, Softmax), **config)
 
+set_mlp.w = w10
+set_mlp.b = b10
+
+print("\nNon zero before pruning: ")
+for k, w in w10.items():
+    print(w.count_nonzero())
+
+accuracy, _= set_mlp.predict(X_test, Y_test, batch_size=1)
+print("\nAccuracy before pruning on the testing data: ", accuracy)
+
 for k, w in w10.items():
     i, j, v = find(w)
-    # plt.hist(v, bins=100)
+    # plt.hist(np.round(v,2), bins=100)
     # plt.title(f'Weight distribution layer {k}')
     # plt.xlabel("value")
     # plt.ylabel("Frequency")
@@ -89,17 +99,38 @@ for k, w in w10.items():
     weights = w.toarray()
     positive_mean = np.median(weights[weights > 0])
     # positive_std = np.std(weights[weights > 0])
-    # zscore_pos = stats.zscore(weights[weights > 0])
+    # zscore_pos = stats.zscore(v)
+    #
+    # plt.plot(zscore_pos)
+    # plt.show()
+
     negative_mean = np.median(weights[weights < 0])
+
+    p95 = np.percentile(v, 95)
+    p75 = np.percentile(v, 75)
+    p50 = np.percentile(v, 50)
+    p25 = np.percentile(v, 25)
+    p5 = np.percentile(v, 5)
+
+    p20 = np.percentile(v, 20)
+    p80 = np.percentile(v, 80)
+
     # negative_std = np.std(weights[weights < 0])
     # zscore_neg = stats.zscore(weights[weights < 0])
-    eps = 0.05
+    eps = 0.08
     #weights[((weights > positive_mean - eps) & (weights < positive_mean + eps)) & (weights > 0)] = 0.0
     # weights[((weights > negative_mean - eps) & (weights < negative_mean + eps)) & (weights < 0)] = 0.0
-    # weights[(weights < positive_mean + eps) & (weights > 0)] = 0.0
-    # weights[(weights > negative_mean - eps) & (weights < 0)] = 0.0
-    weights[np.abs(weights) <= eps] = 0.0
-    weights[(np.abs(np.round(weights, 2)) == np.round(positive_mean, 2)) | (np.abs(np.round(weights, 2)) == np.round(negative_mean, 2))] = 0.0
+    weights[(weights <= np.round(p75,  2)) & (weights > 0)] = 0.0
+    weights[(weights >= np.round(p25,  2)) & (weights < 0)] = 0.0
+    #weights[np.abs(weights) <= eps] = 0.0
+    # weights[(np.abs(np.round(weights, 2)) == np.round(positive_mean, 2)) | (np.abs(np.round(weights, 2)) == np.round(negative_mean, 2))] = 0.0
+    # weights[(np.round(weights, 2) != np.round(p5, 2)) & (np.round(weights, 2) != np.round(p25, 2)) &
+    #         (np.round(weights, 2) != np.round(p50, 2)) & (np.round(weights, 2) != np.round(p75, 2)) & (np.round(weights, 2) != np.round(p95, 2))] = 0.0
+    # weights[np.round(weights, 2) == np.round(p5,  2)] = 0.0
+    # weights[np.round(weights, 2) == np.round(p25, 2)] = 0.0
+    # weights[np.round(weights, 2) == np.round(p50, 2)] = 0.0
+    # weights[np.round(weights, 2) == np.round(p75, 2)] = 0.0
+    # weights[np.round(weights, 2) == np.round(p95, 2)] = 0.0
     w = csr_matrix(weights)
     i, j, v = find(w)
     # plt.hist(v, bins=100)
@@ -113,5 +144,9 @@ for k, w in w10.items():
 set_mlp.w = w10
 set_mlp.b = b10
 
-accuracy, _ = set_mlp.predict(X_test, Y_test, batch_size=1)
-print("\nAccuracy of the last epoch on the testing data: ", accuracy)
+print("\nNon zero after pruning: ")
+for k, w in w10.items():
+    print(w.count_nonzero())
+
+accuracy, _= set_mlp.predict(X_test, Y_test, batch_size=1)
+print("\nAccuracy after pruning on the testing data: ", accuracy)

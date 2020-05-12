@@ -6,7 +6,7 @@ import joblib
 import pickle
 import h5py
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from keras.datasets import cifar10
+from keras.datasets import cifar10, mnist
 from keras.utils import np_utils
 from PIL import Image
 
@@ -20,10 +20,42 @@ class Error(Exception):
     pass
 
 
+def load_mnist_data(n_training_samples, n_testing_samples):
+    np.random.seed(0)
+
+    # read CIFAR10 data
+    (x, y), (x_test, y_test) = mnist.load_data()
+
+    y = np_utils.to_categorical(y, 10)
+    y_test = np_utils.to_categorical(y_test, 10)
+    x = x.astype('float32')
+    x_test = x_test.astype('float32')
+
+    index_train = np.arange(x.shape[0])
+    np.random.shuffle(index_train)
+
+    index_test = np.arange(x_test.shape[0])
+    np.random.shuffle(index_test)
+
+    x_train = x[index_train[0:n_training_samples], :]
+    y_train = y[index_train[0:n_training_samples], :]
+
+    x_test = x_test[index_test[0:n_testing_samples], :]
+    y_test = y_test[index_test[0:n_testing_samples], :]
+
+    # Normalize data
+    x_train = x_train / 255.
+    x_test = x_test / 255.
+    x_train = x_train.reshape(-1, 28 * 28).astype('float32')
+    x_test = x_test.reshape(-1, 28 * 28).astype('float32')
+
+    return x_train, y_train, x_test, y_test
+
+
 def load_fashion_mnist_data(n_training_samples, n_testing_samples):
     np.random.seed(0)
 
-    data = np.load("../Tutorial-IJCAI-2019-Scalable-Deep-Learning/data/fashion_mnist.npz")
+    data = np.load("../../Tutorial-IJCAI-2019-Scalable-Deep-Learning/data/fashion_mnist.npz")
 
     index_train = np.arange(data["X_train"].shape[0])
     np.random.shuffle(index_train)
@@ -37,8 +69,8 @@ def load_fashion_mnist_data(n_training_samples, n_testing_samples):
     y_test = data["Y_test"][index_test[0:n_testing_samples], :]
 
     # Normalize in 0..1
-    x_train = x_train.astype('float64') / 255.
-    x_test = x_test.astype('float64') / 255.
+    x_train = x_train.astype('float32') / 255.
+    x_test = x_test.astype('float32') / 255.
 
     return x_train, y_train, x_test, y_test
 

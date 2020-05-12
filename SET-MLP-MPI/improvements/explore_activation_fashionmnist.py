@@ -78,60 +78,73 @@ config = {
 set_mlp = SET_MLP((X_train.shape[1], 1000, 1000, 1000,
                            Y_train.shape[1]), (Relu, Relu, Relu, Softmax), **config)
 
-# for k, w in w10.items():
-#     i, j, v = find(w)
-#     plt.hist(np.round(v,2), bins=100)
-#     plt.title(f'Weight distribution layer {k}')
-#     plt.xlabel("value")
-#     plt.ylabel("Frequency")
-#     plt.show()
-#     weights = w.toarray()
-#     positive_mean = np.median(weights[weights > 0])
-#     # positive_std = np.std(weights[weights > 0])
-#     # zscore_pos = stats.zscore(v)
-#     #
-#     # plt.plot(zscore_pos)
-#     # plt.show()
-#
-#     negative_mean = np.median(weights[weights < 0])
-#
-#     p95 = np.percentile(v, 95)
-#     p75 = np.percentile(v, 75)
-#     p50 = np.percentile(v, 50)
-#     p25 = np.percentile(v, 25)
-#     p5 = np.percentile(v, 5)
-#
-#     # negative_std = np.std(weights[weights < 0])
-#     # zscore_neg = stats.zscore(weights[weights < 0])
-#     eps = 0.08
-#     #weights[((weights > positive_mean - eps) & (weights < positive_mean + eps)) & (weights > 0)] = 0.0
-#     # weights[((weights > negative_mean - eps) & (weights < negative_mean + eps)) & (weights < 0)] = 0.0
-#     weights[(weights < np.round(p75,  2)) & (weights > 0)] = 0.0
-#     weights[(weights > np.round(p25,  2)) & (weights < 0)] = 0.0
-#     #weights[np.abs(weights) <= eps] = 0.0
-#     # weights[(np.abs(np.round(weights, 2)) == np.round(positive_mean, 2)) | (np.abs(np.round(weights, 2)) == np.round(negative_mean, 2))] = 0.0
-#     # weights[(np.round(weights, 2) != np.round(p5, 2)) & (np.round(weights, 2) != np.round(p25, 2)) &
-#     #         (np.round(weights, 2) != np.round(p50, 2)) & (np.round(weights, 2) != np.round(p75, 2)) & (np.round(weights, 2) != np.round(p95, 2))] = 0.0
-#
-#     weights[np.round(weights, 2) == np.round(p5,  2)]  = 0.0
-#     weights[np.round(weights, 2) == np.round(p25, 2)] = 0.0
-#     weights[np.round(weights, 2) == np.round(p50, 2)] = 0.0
-#     weights[np.round(weights, 2) == np.round(p75, 2)] = 0.0
-#     weights[np.round(weights, 2) == np.round(p95, 2)] = 0.0
-#     w = csr_matrix(weights)
-#     i, j, v = find(w)
-#     plt.hist(v, bins=100)
-#     plt.title(f'Weight distribution layer {k}')
-#     plt.xlabel("value")
-#     plt.ylabel("Frequency")
-#     plt.show()
-#     w10[k] = w
+set_mlp.w = w10
+set_mlp.b = b10
+
+print("\nNon zero before pruning: ")
+for k, w in w10.items():
+    print(w.count_nonzero())
+
+accuracy, _= set_mlp.predict(X_test, Y_test, batch_size=1)
+print("\nAccuracy before pruning on the testing data: ", accuracy)
+
+
+for k, w in w10.items():
+    i, j, v = find(w)
+    # plt.hist(np.round(v,2), bins=100)
+    # plt.title(f'Weight distribution layer {k}')
+    # plt.xlabel("value")
+    # plt.ylabel("Frequency")
+    # plt.show()
+    weights = w.toarray()
+    positive_mean = np.median(weights[weights > 0])
+    # positive_std = np.std(weights[weights > 0])
+    # zscore_pos = stats.zscore(v)
+    #
+    # plt.plot(zscore_pos)
+    # plt.show()
+
+    negative_mean = np.median(weights[weights < 0])
+
+    p95 = np.percentile(v, 95)
+    p75 = np.percentile(v, 75)
+    p50 = np.percentile(v, 50)
+    p25 = np.percentile(v, 25)
+    p5 = np.percentile(v, 5)
+
+    # negative_std = np.std(weights[weights < 0])
+    # zscore_neg = stats.zscore(weights[weights < 0])
+    eps = 0.08
+    #weights[((weights > positive_mean - eps) & (weights < positive_mean + eps)) & (weights > 0)] = 0.0
+    # weights[((weights > negative_mean - eps) & (weights < negative_mean + eps)) & (weights < 0)] = 0.0
+    weights[(weights <= np.round(p75,  2)) & (weights > 0)] = 0.0
+    weights[(weights >= np.round(p25,  2)) & (weights < 0)] = 0.0
+    #weights[np.abs(weights) <= eps] = 0.0
+    # weights[(np.abs(np.round(weights, 2)) == np.round(positive_mean, 2)) | (np.abs(np.round(weights, 2)) == np.round(negative_mean, 2))] = 0.0
+    # weights[(np.round(weights, 2) != np.round(p5, 2)) & (np.round(weights, 2) != np.round(p25, 2)) &
+    #         (np.round(weights, 2) != np.round(p50, 2)) & (np.round(weights, 2) != np.round(p75, 2)) & (np.round(weights, 2) != np.round(p95, 2))] = 0.0
+
+    # weights[np.round(weights, 2) == np.round(p5,  2)]  = 0.0
+    # weights[np.round(weights, 2) == np.round(p25, 2)] = 0.0
+    # weights[np.round(weights, 2) == np.round(p50, 2)] = 0.0
+    # weights[np.round(weights, 2) == np.round(p75, 2)] = 0.0
+    # weights[np.round(weights, 2) == np.round(p95, 2)] = 0.0
+    w = csr_matrix(weights)
+    i, j, v = find(w)
+    # plt.hist(v, bins=100)
+    # plt.title(f'Weight distribution layer {k}')
+    # plt.xlabel("value")
+    # plt.ylabel("Frequency")
+    # plt.show()
+    w10[k] = w
 
 
 set_mlp.w = w10
 set_mlp.b = b10
-for k, w in w10.items():
-    print(w.nonzero)
 
-accuracy, _= set_mlp.predict(X_test[0:1], Y_test[0:1], batch_size=1)
-print("\nAccuracy of the last epoch on the testing data: ", accuracy)
+print("\nNon zero after pruning: ")
+for k, w in w10.items():
+    print(w.count_nonzero())
+
+accuracy, _= set_mlp.predict(X_test, Y_test, batch_size=1)
+print("\nAccuracy after pruning on the testing data: ", accuracy)

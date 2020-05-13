@@ -193,6 +193,13 @@ def get_optimizer(name):
     return lookup[name]
 
 
+def array_intersect(A, B):
+    # this are for array intersection
+    nrows, ncols = A.shape
+    dtype = {'names': ['f{}'.format(i) for i in range(ncols)], 'formats': ncols * [A.dtype]}
+    return np.in1d(A.view(dtype), B.view(dtype))  # boolean return
+
+
 def retain_valid_updates(weights, gradient):
     cols = gradient.shape[1]
     Ia, Ja, Va = sparse.find(weights)

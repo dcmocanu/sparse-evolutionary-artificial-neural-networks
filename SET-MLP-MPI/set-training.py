@@ -23,7 +23,7 @@ parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                     help='SGD momentum (default: 0.9)')
 parser.add_argument('--dropout-rate', type=float, default=0.3, metavar='D',
                     help='Dropout rate')
-parser.add_argument('--weight-decay', type=float, default=0.0, metavar='W',
+parser.add_argument('--weight-decay', type=float, default=0.0002, metavar='W',
                     help='Dropout rate')
 parser.add_argument('--epsilon', type=int, default=20, metavar='E',
                     help='Sparsity level')

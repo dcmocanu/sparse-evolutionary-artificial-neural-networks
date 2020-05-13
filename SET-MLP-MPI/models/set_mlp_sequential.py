@@ -33,6 +33,7 @@
 # Ritchie Vink (https://www.ritchievink.com): for making available on Github a nice Python implementation of fully connected MLPs. This SET-MLP implementation was built on top of his MLP code:
 #                                             https://github.com/ritchie46/vanilla-machine-learning/blob/master/vanilla_mlp.py
 
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from scipy.sparse import lil_matrix
 from scipy.sparse import coo_matrix
 from scipy.sparse import dok_matrix
@@ -45,6 +46,7 @@ import sparsebackpropagation
 import datetime
 import os
 import sys
+import concurrent.futures
 import numpy as np
 import threading
 from numba import njit, jit
@@ -64,11 +66,13 @@ def backpropagation_updates_Numpy(a, delta, rows, cols, out):
         out[i] = s / a.shape[0]
 
 
+@njit
 def find_first_pos(array, value):
     idx = (np.abs(array - value)).argmin()
     return idx
 
 
+@njit
 def find_last_pos(array, value):
     idx = (np.abs(array - value))[::-1].argmin()
     return array.shape[0] - idx
@@ -134,16 +138,16 @@ class SET_MLP:
         self.pdd = {}
         self.activations = {}
 
-        for i in range(len(dimensions) - 2):
+        for i in range(len(dimensions) - 1):
             self.w[i + 1] = createSparseWeights(self.epsilon, dimensions[i], dimensions[i + 1])  #create sparse weight matrices
             self.b[i + 1] = np.zeros(dimensions[i + 1], dtype='float32')
             self.activations[i + 2] = activations[i]
 
-        limit = np.sqrt(6. / float(dimensions[-2] + dimensions[-1]))
-        self.w[len(dimensions) - 1] = csr_matrix(np.random.uniform(-limit, limit,
-                                                                   (dimensions[-2], dimensions[-1])), dtype='float32')
-        self.b[len(dimensions) - 1] = np.zeros(dimensions[-1], dtype='float32')
-        self.activations[len(dimensions)] = activations[-1]
+        # limit = np.sqrt(6. / float(dimensions[-2] + dimensions[-1]))
+        # self.w[len(dimensions) - 1] = csr_matrix(np.random.uniform(-limit, limit,
+        #                                                            (dimensions[-2], dimensions[-1])), dtype='float32')
+        # self.b[len(dimensions) - 1] = np.zeros(dimensions[-1], dtype='float32')
+        # self.activations[len(dimensions)] = activations[-1]
 
         if config['loss'] == 'mse':
             self.loss = MSE(self.activations[self.n_layers])
@@ -260,6 +264,10 @@ class SET_MLP:
         for k, v in update_params.items():
             self._update_w_b(k, v[0], v[1])
 
+        # with ThreadPoolExecutor() as executor:
+        #     k, v = update_params.items()
+        #     results = executor.map(self._update_w_b, k, v[0], v[1])
+
     def _update_w_b(self, index, dw, delta):
         """
         Update weights and biases.
@@ -277,8 +285,8 @@ class SET_MLP:
             self.pdw[index] = self.momentum * self.pdw[index] - self.learning_rate * dw
             self.pdd[index] = self.momentum * self.pdd[index] - self.learning_rate * delta
 
-        self.w[index] += self.pdw[index]  # - self.weight_decay * self.w[index]
-        self.b[index] += self.pdd[index]  # - self.weight_decay * self.b[index]
+        self.w[index] += self.pdw[index] - self.weight_decay * self.w[index]
+        self.b[index] += self.pdd[index] - self.weight_decay * self.b[index]
 
     def train_on_batch(self, x, y):
         z, a, masks = self._feed_forward(x, True)
@@ -530,7 +538,7 @@ class SET_MLP:
     def weightsEvolution_II(self):
         # this represents the core of the SET procedure. It removes the weights closest to zero in each layer and add new random weights
         #evolve all layers, except the one from the last hidden layer to the output layer
-        for i in range(1, self.n_layers - 1):
+        for i in range(1, self.n_layers):
             # uncomment line below to stop evolution of dense weights more than 80% non-zeros
             #if(self.w[i].count_nonzero()/(self.w[i].get_shape()[0]*self.w[i].get_shape()[1]) < 0.8):
                 t_ev_1 = datetime.datetime.now()
@@ -540,10 +548,10 @@ class SET_MLP:
                 rowsW = wcoo.row
                 colsW = wcoo.col
 
-                # pdcoo = self.pdw[i].tocoo()
-                # valsPD = pdcoo.data
-                # rowsPD = pdcoo.row
-                # colsPD = pdcoo.col
+                pdcoo = self.pdw[i].tocoo()
+                valsPD = pdcoo.data
+                rowsPD = pdcoo.row
+                colsPD = pdcoo.col
 
                 # print("Number of non zeros in W and PD matrix before evolution in layer",i,[np.size(valsW), np.size(valsPD)])
                 values = np.sort(self.w[i].data)
@@ -559,17 +567,17 @@ class SET_MLP:
                 rowsWNew = rowsW[(valsW > smallestPositive) | (valsW < largestNegative)]
                 colsWNew = colsW[(valsW > smallestPositive) | (valsW < largestNegative)]
 
-                # newWRowColIndex = np.stack((rowsWNew, colsWNew), axis=-1)
-                # oldPDRowColIndex = np.stack((rowsPD, colsPD), axis=-1)
+                newWRowColIndex = np.stack((rowsWNew, colsWNew), axis=-1)
+                oldPDRowColIndex = np.stack((rowsPD, colsPD), axis=-1)
 
-                # newPDRowColIndexFlag = array_intersect(oldPDRowColIndex, newWRowColIndex)  # careful about order
-                #
-                # valsPDNew = valsPD[newPDRowColIndexFlag]
-                # rowsPDNew = rowsPD[newPDRowColIndexFlag]
-                # colsPDNew = colsPD[newPDRowColIndexFlag]
-                #
-                # self.pdw[i] = coo_matrix((valsPDNew, (rowsPDNew, colsPDNew)),
-                #                          (self.dimensions[i - 1], self.dimensions[i]), dtype='float32').tocsr()
+                newPDRowColIndexFlag = array_intersect(oldPDRowColIndex, newWRowColIndex)  # careful about order
+
+                valsPDNew = valsPD[newPDRowColIndexFlag]
+                rowsPDNew = rowsPD[newPDRowColIndexFlag]
+                colsPDNew = colsPD[newPDRowColIndexFlag]
+
+                self.pdw[i] = coo_matrix((valsPDNew, (rowsPDNew, colsPDNew)),
+                                         (self.dimensions[i - 1], self.dimensions[i]), dtype='float32').tocsr()
 
                 if(i==1):
                     self.inputLayerConnections.append(coo_matrix((valsWNew, (rowsWNew, colsWNew)),
@@ -618,8 +626,8 @@ class SET_MLP:
                 # t_ev_2 = datetime.datetime.now()
                 # print("Weights evolution time for layer",i,"is", t_ev_2 - t_ev_1)
 
-        self.pdw = {}
-        self.pdd = {}
+        # self.pdw = {}
+        # self.pdd = {}
 
     def predict(self, x_test, y_test, batch_size=1):
         """

@@ -43,7 +43,7 @@ from __future__ import print_function
 
 # Force Keras to use CPU
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 from utils.load_data import *
 from keras.preprocessing.image import ImageDataGenerator
@@ -257,16 +257,16 @@ class SET_MLP_CIFAR10:
 
         self.accuracies_per_epoch=np.asarray(self.accuracies_per_epoch)
 
-    def fit(self, x, y_true, x_test, y_test, batch_size=100, testing=True, save_filename=""):
-
+    def fit(self, x, y_true, x_test, y_test, batch_size=100):
         self.model.summary()
 
         # training process in a for loop
         self.accuracies_per_epoch = []
-        for epoch in range(0, self.maxepoches):
-            sgd = optimizers.SGD(momentum=0.9, learning_rate=0.01)
-            self.model.compile(loss='categorical_crossentropy', optimizer=sgd, metrics=['accuracy'])
 
+        sgd = optimizers.SGD(momentum=0.9, learning_rate=0.01)
+        self.model.compile(loss='categorical_crossentropy', optimizer=sgd, metrics=['accuracy'])
+
+        for epoch in range(0, self.maxepoches):
             # Shuffle the data
             seed = np.arange(x.shape[0])
             np.random.shuffle(seed)
@@ -297,8 +297,6 @@ class SET_MLP_CIFAR10:
              #ugly hack to avoid tensorflow memory increase for multiple fit_generator calls. Theano shall work more nicely this but it is outdated in general
             t1 = datetime.datetime.now()
             self.weightsEvolution()
-            K.clear_session()
-            self.create_model()
             t2 = datetime.datetime.now()
             print("Evolution time: ", t2 - t1)
         self.accuracies_per_epoch=np.asarray(self.accuracies_per_epoch)
@@ -332,9 +330,7 @@ if __name__ == '__main__':
     X_test = X_test.reshape(-1, 32, 32, 3)
 
     start_time = time.time()
-    model.fit(X_train, Y_train, X_test, Y_test, 100, testing=True,
-                save_filename="../Results/set_mlp_keras_cifar10_one_cpu" + str(50000) + "_training_samples_e" + str(
-                    20) + "_rand" + str(0))
+    model.fit(X_train, Y_train, X_test, Y_test, 100)
     step_time = time.time() - start_time
     print("\nTotal training time: ", step_time)
 
@@ -344,7 +340,7 @@ if __name__ == '__main__':
 
     # save accuracies over for all training epochs
     # in "results" folder you can find the output of running this file
-    np.savetxt("../Results/set_mlp_relu_sgd_cifar10_one_cpu.txt", np.asarray(model.accuracies_per_epoch))
+    np.savetxt("../Results2/set_mlp_relu_sgd_cifar10_one_cpu.txt", np.asarray(model.accuracies_per_epoch))
 
 
 

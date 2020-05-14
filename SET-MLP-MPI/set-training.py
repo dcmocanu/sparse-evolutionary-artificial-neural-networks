@@ -105,7 +105,7 @@ if __name__ == "__main__":
                            Y_train.shape[1]), (Relu, Relu, Relu, Softmax), **config)
         start_time = time.time()
         set_mlp.fit(X_train, Y_train, X_test, Y_test, testing=True,
-                    save_filename=r"Results2/1epochs_set_mlp_sequential_cifar10_" +
+                    save_filename=r"Results2/fast2_set_mlp_sequential_cifar10_" +
                                   str(n_training_samples) + "_training_samples_e" + str(
                         epsilon) + "_rand" + str(i))
         step_time = time.time() - start_time

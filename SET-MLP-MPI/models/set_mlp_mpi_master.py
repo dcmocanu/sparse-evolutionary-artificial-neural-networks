@@ -39,8 +39,9 @@ from scipy.sparse import coo_matrix
 from scipy.sparse import dok_matrix
 from scipy.sparse import csr_matrix
 from models.nn_functions import *
+from numba import njit, jit
 # the "sparseoperations" Cython library was tested in Ubuntu 16.04. Please note that you may encounter some "solvable" issues if you compile it in Windows.
-import sparseoperations
+import sparsebackpropagation
 import datetime
 import os
 import numpy as np
@@ -59,11 +60,12 @@ def backpropagation_updates_Numpy(a, delta, rows, cols, out):
         out[i] = s / a.shape[0]
 
 
+@njit(parallel=True, fastmath=True)
 def find_first_pos(array, value):
     idx = (np.abs(array - value)).argmin()
     return idx
 
-
+@njit(parallel=True, fastmath=True)
 def find_last_pos(array, value):
     idx = (np.abs(array - value))[::-1].argmin()
     return array.shape[0] - idx
@@ -72,14 +74,12 @@ def find_last_pos(array, value):
 def createSparseWeights(epsilon, noRows, noCols):
     limit = np.sqrt(6. / float(noRows + noCols))
 
-    mask_weights = np.random.rand(noRows, noCols)
-    prob = 1 - (epsilon * (noRows + noCols)) / (noRows * noCols)  # normal tp have 8x connections
     # generate an Erdos Renyi sparse weights mask
-    weights = lil_matrix((noRows, noCols))
-    n_params = np.count_nonzero(mask_weights[mask_weights >= prob])
-    weights[mask_weights >= prob] = np.random.uniform(-limit, limit, n_params)
+    weights = lil_matrix((noRows, noCols), dtype='float32')
+    for i in range(epsilon * (noRows + noCols)):
+        weights[np.random.randint(0, noRows), np.random.randint(0, noCols)] = np.float32(np.random.uniform(-limit, limit))
     print("Create sparse matrix with ", weights.getnnz(), " connections and ",
-           (weights.getnnz() / (noRows * noCols)) * 100, "% density level")
+          (weights.getnnz() / (noRows * noCols)) * 100, "% density level")
     weights = weights.tocsr()
     return weights
 
@@ -126,18 +126,16 @@ class SET_MLP:
         self.pdd = {}
         self.activations = {}
 
-        # t1 = datetime.datetime.now()
-
         for i in range(len(dimensions) - 2):
             self.w[i + 1] = createSparseWeights(self.epsilon, dimensions[i],
-                                                dimensions[i + 1])  #create sparse weight matrices
-            self.b[i + 1] = np.zeros(dimensions[i + 1])
+                                                dimensions[i + 1])  # create sparse weight matrices
+            self.b[i + 1] = np.zeros(dimensions[i + 1], dtype='float32')
             self.activations[i + 2] = activations[i]
 
         limit = np.sqrt(6. / float(dimensions[-2] + dimensions[-1]))
         self.w[len(dimensions) - 1] = csr_matrix(np.random.uniform(-limit, limit,
-                                                                   (dimensions[-2], dimensions[-1])))
-        self.b[len(dimensions) - 1] = np.zeros(dimensions[-1])
+                                                                   (dimensions[-2], dimensions[-1])), dtype='float32')
+        self.b[len(dimensions) - 1] = np.zeros(dimensions[-1], dtype='float32')
         self.activations[len(dimensions)] = activations[-1]
 
         # print("Creation sparse weights time: ", t2 - t1)
@@ -172,11 +170,10 @@ class SET_MLP:
     def dropout(self, x, rate):
 
         noise_shape = x.shape
-        noise = np.random.uniform(0., 1., noise_shape)
-        keep_prob = 1. - rate
-        scale = 1 / keep_prob
-        keep_mask = noise >= rate
-        return x * scale * keep_mask.astype('float64'), keep_mask.astype('float64')
+        keep_prob = 1 - rate
+        noise = np.random.binomial(1, keep_prob, noise_shape) / keep_prob
+        noise = noise.astype('float32')
+        return x * noise, noise
 
     def _feed_forward(self, x, drop=False):
         """
@@ -184,13 +181,12 @@ class SET_MLP:
         :param x: (array) Batch of input data vectors.
         :return: (tpl) Node outputs and activations per layer. The numbering of the output is equivalent to the layer numbers.
         """
-        if self.dropout_rate > 0.0: drop = True
         # w(x) + b
         z = {}
 
         # activations: f(z)
         a = {1: x}  # First layer has no activations as input. The input x is the input.
-        masks = {1: x}
+        masks = {}
 
         for i in range(1, self.n_layers):
             z[i + 1] = a[i] @ self.w[i] + self.b[i]
@@ -219,21 +215,21 @@ class SET_MLP:
         :return:
         """
         keep_prob = 1.
-        if self.dropout_rate > 0.:
+        if self.dropout_rate > 0:
             keep_prob = 1. - self.dropout_rate
 
         # Determine partial derivative and delta for the output layer.
         # delta output layer
         delta = self.loss.delta(y_true, a[self.n_layers])
-        dw = coo_matrix(self.w[self.n_layers - 1])
+        dw = coo_matrix(self.w[self.n_layers - 1], dtype='float32')
         # compute backpropagation updates
-        sparseoperations.backpropagation_updates_Cython(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
+        sparsebackpropagation.backpropagation_updates(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
 
         # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above. Please note that the running time will be much higher
         # backpropagation_updates_Numpy(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
 
         update_params = {
-            self.n_layers - 1: (dw.tocsr(), np.sum(delta, axis=0) / self.batch_size)
+            self.n_layers - 1: (dw.tocsr(), np.mean(delta, axis=0))
         }
 
         # In case of three layer net will iterate over i = 2 and i = 1
@@ -244,18 +240,17 @@ class SET_MLP:
             if keep_prob != 1:
                 delta = (delta @ self.w[i].transpose()) * self.activations[i].prime(z[i])
                 delta = delta * masks[i]
-                delta /= keep_prob
             else:
                 delta = (delta @ self.w[i].transpose()) * self.activations[i].prime(z[i])
 
-            dw = coo_matrix(self.w[i - 1])
+            dw = coo_matrix(self.w[i - 1], dtype='float32')
 
             # compute backpropagation updates
-            sparseoperations.backpropagation_updates_Cython(a[i - 1], delta, dw.row, dw.col, dw.data)
+            sparsebackpropagation.backpropagation_updates(a[i - 1], delta, dw.row, dw.col, dw.data)
             # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above. Please note that the running time will be much higher
             # backpropagation_updates_Numpy(a[i - 1], delta, dw.row, dw.col, dw.data)
 
-            update_params[i - 1] = (dw.tocsr(), np.sum(delta, axis=0) / self.batch_size)
+            update_params[i - 1] = (dw.tocsr(), np.mean(delta, axis=0))
 
         return update_params
 
@@ -340,10 +335,10 @@ class SET_MLP:
                 rowsW = wcoo.row
                 colsW = wcoo.col
 
-                pdcoo = self.pdw[i].tocoo()
-                valsPD = pdcoo.data
-                rowsPD = pdcoo.row
-                colsPD = pdcoo.col
+                # pdcoo = self.pdw[i].tocoo()
+                # valsPD = pdcoo.data
+                # rowsPD = pdcoo.row
+                # colsPD = pdcoo.col
 
                 # print("Number of non zeros in W and PD matrix before evolution in layer",i,[np.size(valsW), np.size(valsPD)])
                 values = np.sort(self.w[i].data)
@@ -359,31 +354,26 @@ class SET_MLP:
                 rowsWNew = rowsW[(valsW > smallestPositive) | (valsW < largestNegative)]
                 colsWNew = colsW[(valsW > smallestPositive) | (valsW < largestNegative)]
 
-                newWRowColIndex = np.stack((rowsWNew, colsWNew), axis=-1)
-                oldPDRowColIndex = np.stack((rowsPD, colsPD), axis=-1)
+                # newWRowColIndex = np.stack((rowsWNew, colsWNew), axis=-1)
+                # oldPDRowColIndex = np.stack((rowsPD, colsPD), axis=-1)
+                #
+                # newPDRowColIndexFlag = array_intersect(oldPDRowColIndex, newWRowColIndex)  # careful about order
+                #
+                # valsPDNew = valsPD[newPDRowColIndexFlag]
+                # rowsPDNew = rowsPD[newPDRowColIndexFlag]
+                # colsPDNew = colsPD[newPDRowColIndexFlag]
 
-                newPDRowColIndexFlag = array_intersect(oldPDRowColIndex, newWRowColIndex)  # careful about order
-
-                valsPDNew = valsPD[newPDRowColIndexFlag]
-                rowsPDNew = rowsPD[newPDRowColIndexFlag]
-                colsPDNew = colsPD[newPDRowColIndexFlag]
-
-                self.pdw[i] = coo_matrix((valsPDNew, (rowsPDNew, colsPDNew)),
-                                         (self.dimensions[i - 1], self.dimensions[i])).tocsr()
-
-                # if(i==1):
-                #     self.inputLayerConnections.append(coo_matrix((valsWNew, (rowsWNew, colsWNew)),
-                #                        (self.dimensions[i - 1], self.dimensions[i])).getnnz(axis=1))
-                #     np.savez_compressed(self.save_filename + "_input_connections.npz",
-                #                         inputLayerConnections=self.inputLayerConnections)
+                # self.pdw[i] = coo_matrix((valsPDNew, (rowsPDNew, colsPDNew)),
+                #                          (self.dimensions[i - 1], self.dimensions[i]), dtype='float32').tocsr()
 
                 # add new random connections
                 keepConnections = np.size(rowsWNew)
                 lengthRandom = valsW.shape[0] - keepConnections
-                limit = np.sqrt(6. / float(self.dimensions[i] + self.dimensions[i + 1]))
+                limit = np.sqrt(6. / float(self.dimensions[i - 1] + self.dimensions[i]))
                 randomVals = np.random.uniform(-limit, limit, lengthRandom)
-                # randomVals = np.zeros(lengthRandom)
-                zeroVals = 0 * randomVals  # explicit zeros
+                #randomVals = np.zeros(lengthRandom, dtype='float32')
+                #randomVals = np.random.randn(lengthRandom) / 10  # to avoid multiple whiles, can we call 3*rand?
+                # zeroVals = 0 * randomVals  # explicit zeros
 
                 # adding  (wdok[ik,jk]!=0): condition
                 while (lengthRandom > 0):
@@ -410,12 +400,15 @@ class SET_MLP:
                 if (valsWNew.shape[0] != rowsWNew.shape[0]):
                     print("not good")
                 self.w[i] = coo_matrix((valsWNew, (rowsWNew, colsWNew)),
-                                       (self.dimensions[i - 1], self.dimensions[i])).tocsr()
+                                       (self.dimensions[i - 1], self.dimensions[i]), dtype='float32').tocsr()
 
                 # print("Number of non zeros in W and PD matrix after evolution in layer",i,[(self.w[i].data.shape[0]), (self.pdw[i].data.shape[0])])
 
                 # t_ev_2 = datetime.datetime.now()
                 # print("Weights evolution time for layer",i,"is", t_ev_2 - t_ev_1)
+
+        self.pdw = {}
+        self.pdd = {}
 
     def weightsEvolution_III(self):
         # this represents the core of the SET procedure. It removes the weights closest to zero in each layer and add new random weights
@@ -424,7 +417,6 @@ class SET_MLP:
         for i in range(1, self.n_layers - 1):
             # uncomment line below to stop evolution of dense weights more than 80% non-zeros
             #if(self.w[i].count_nonzero()/(self.w[i].get_shape()[0]*self.w[i].get_shape()[1]) < 0.8):
-                t_ev_1 = datetime.datetime.now()
                 # converting to COO form
                 wcoo = self.w[i].tocoo()
                 valsW = wcoo.data
@@ -445,10 +437,7 @@ class SET_MLP:
                 rowsWNew = rowsW[(valsW > smallestPositive) | (valsW < largestNegative)]
                 colsWNew = colsW[(valsW > smallestPositive) | (valsW < largestNegative)]
 
-                newWRowColIndex = np.stack((rowsWNew, colsWNew), axis=-1)
-
-
-                if(i==1):
+                if i == 1:
                     inputLayerConnections.append(coo_matrix((valsWNew, (rowsWNew, colsWNew)),
                                        (self.dimensions[i - 1], self.dimensions[i])).getnnz(axis=1))
 
@@ -457,10 +446,9 @@ class SET_MLP:
                 lengthRandom = valsW.shape[0] - keepConnections
                 limit = np.sqrt(6. / float(self.dimensions[i] + self.dimensions[i + 1]))
                 randomVals = np.random.uniform(-limit, limit, lengthRandom)
-                zeroVals = 0 * randomVals  # explicit zeros
 
                 # adding  (wdok[ik,jk]!=0): condition
-                while (lengthRandom > 0):
+                while lengthRandom > 0:
                     ik = np.random.randint(0, self.dimensions[i - 1], size=lengthRandom, dtype='int32')
                     jk = np.random.randint(0, self.dimensions[i], size=lengthRandom, dtype='int32')
 
@@ -480,7 +468,7 @@ class SET_MLP:
 
                 # adding all the values along with corresponding row and column indices
                 valsWNew = np.append(valsWNew, randomVals)
-                # valsPDNew=np.append(valsPDNew, zeroVals)
+
                 if (valsWNew.shape[0] != rowsWNew.shape[0]):
                     print("not good")
                 self.w[i] = coo_matrix((valsWNew, (rowsWNew, colsWNew)),
@@ -488,8 +476,6 @@ class SET_MLP:
 
                 # print("Number of non zeros in W and PD matrix after evolution in layer",i,[(self.w[i].data.shape[0]), (self.pdw[i].data.shape[0])])
 
-                # t_ev_2 = datetime.datetime.now()
-                # print("Weights evolution time for layer",i,"is", t_ev_2 - t_ev_1)
         return inputLayerConnections
 
     def predict(self, x_test, y_test, batch_size=1):

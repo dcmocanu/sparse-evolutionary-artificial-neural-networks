@@ -50,7 +50,7 @@ if __name__ == '__main__':
     # Configuration of training process
     parser.add_argument('--loss', help='loss function', default='cross_entropy')
     parser.add_argument('--sync-every', help='how often to sync weights with master',
-                        default=3, type=int, dest='sync_every')
+                        default=1, type=int, dest='sync_every')
     parser.add_argument('--mode', help='Mode of operation.'
                         'One of "sgd" (Stohastic Gradient Descent), "sgdm" (Stohastic Gradient Descent with Momentum),'
                         '"easgd" (Elastic Averaging SGD) or "gem" (Gradient Energy Matching)',
@@ -71,9 +71,9 @@ if __name__ == '__main__':
     parser.add_argument('--log-level', default='info', dest='log_level', help='log level (debug, info, warn, error)')
 
     # Model configuration
-    parser.add_argument('--batch-size', type=int, default=1000, help='input batch size for training (default: 64)')
-    parser.add_argument('--epochs', type=int, default=200,  help='number of epochs to train (default: 10)')
-    parser.add_argument('--lr', type=float, default=0.05, help='learning rate (default: 0.01)')
+    parser.add_argument('--batch-size', type=int, default=100, help='input batch size for training (default: 64)')
+    parser.add_argument('--epochs', type=int, default=50,  help='number of epochs to train (default: 10)')
+    parser.add_argument('--lr', type=float, default=0.01, help='learning rate (default: 0.01)')
     parser.add_argument('--lr-rate-decay', type=float, default=0.0, help='learning rate decay (default: 0)')
     parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum (default: 0.5)')
     parser.add_argument('--dropout-rate', type=float, default=0.3, help='Dropout rate')
@@ -86,7 +86,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=0, help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=10,
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--n-training-samples', type=int, default=60000, help='Number of training samples')
+    parser.add_argument('--n-training-samples', type=int, default=50000, help='Number of training samples')
     parser.add_argument('--n-testing-samples', type=int, default=10000, help='Number of testing samples')
 
     args = parser.parse_args()
@@ -112,7 +112,7 @@ if __name__ == '__main__':
     num_workers = num_processes - 1
 
     # Initialize logger
-    base_file_name = "Results2/gem_set_mlp_mpi_fashionmnist_" + str(args.n_training_samples) + "_training_samples_e" + \
+    base_file_name = "Results2/easgd_set_mlp_mpi_cifar10_" + str(args.n_training_samples) + "_training_samples_e" + \
                     str(args.epsilon) + "_rand" + str(1) + "_num_workers_" + str(num_workers)
     log_file = base_file_name + "_logs_execution.txt"
 
@@ -122,7 +122,7 @@ if __name__ == '__main__':
 
     if num_processes == 1:
         # Load dataset
-        X_train, Y_train, X_test, Y_test = load_fashion_mnist_data(args.n_training_samples, args.n_testing_samples)
+        X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
         validate_every = int(X_train.shape[0] // args.batch_size)
         data = Data(batch_size=args.batch_size,
                     x_train=X_train, y_train=Y_train,
@@ -139,7 +139,7 @@ if __name__ == '__main__':
 
             # Load normal dataset
 
-            X_train, Y_train, X_test, Y_test = load_fashion_mnist_data(args.n_training_samples,
+            X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples,
                                                                                args.n_testing_samples)
             validate_every = int(X_train.shape[0] // args.batch_size)
             partitions = shared_partitions(X_train.shape[0], num_workers, args.batch_size)
@@ -153,8 +153,7 @@ if __name__ == '__main__':
             # X_test = np.load('mpi_training/cifar10/x_test.npy', mmap_mode='r')
             # Y_test = np.load('mpi_training/cifar10/y_test.npy', mmap_mode='r')
 
-            X_train, Y_train,  X_test, Y_test = load_fashion_mnist_data(args.n_training_samples,
-                                                                    args.n_testing_samples)
+            X_train, Y_train,  X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
 
             validate_every = int(X_train.shape[0] // args.batch_size)
             data = Data(batch_size=args.batch_size,
@@ -180,10 +179,10 @@ if __name__ == '__main__':
         algo = Algo(optimizer='sgd', validate_every=validate_every, lr=args.lr, sync_every=args.sync_every)
 
     # Model architecture cifar10
-    # dimensions = (3072, 4000, 1000, 4000, 10)
+    dimensions = (3072, 4000, 1000, 4000, 10)
 
     # Model architecture mnist
-    dimensions = (784, 1000, 1000, 1000, 10)
+    # dimensions = (784, 1000, 1000, 1000, 10)
 
     # Model architecture higgs
     # dimensions = (28, 1000, 1000, 1000, 2)

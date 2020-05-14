@@ -39,8 +39,9 @@ from scipy.sparse import coo_matrix
 from scipy.sparse import dok_matrix
 from scipy.sparse import csr_matrix
 from models.nn_functions import *
+from numba import njit, jit
 # the "sparseoperations" Cython library was tested in Ubuntu 16.04. Please note that you may encounter some "solvable" issues if you compile it in Windows.
-import sparseoperations
+import sparsebackpropagation
 import datetime
 import os
 import numpy as np
@@ -51,6 +52,7 @@ sys.stderr = open(os.devnull, 'w')
 sys.stderr = stderr
 
 
+@njit(parallel=True, fastmath=True)
 def backpropagation_updates_Numpy(a, delta, rows, cols, out):
     for i in range(out.shape[0]):
         s = 0
@@ -59,11 +61,13 @@ def backpropagation_updates_Numpy(a, delta, rows, cols, out):
         out[i] = s / a.shape[0]
 
 
+@njit(parallel=True, fastmath=True)
 def find_first_pos(array, value):
     idx = (np.abs(array - value)).argmin()
     return idx
 
 
+@njit(parallel=True, fastmath=True)
 def find_last_pos(array, value):
     idx = (np.abs(array - value))[::-1].argmin()
     return array.shape[0] - idx
@@ -72,14 +76,12 @@ def find_last_pos(array, value):
 def createSparseWeights(epsilon, noRows, noCols):
     limit = np.sqrt(6. / float(noRows + noCols))
 
-    mask_weights = np.random.rand(noRows, noCols)
-    prob = 1 - (epsilon * (noRows + noCols)) / (noRows * noCols)  # normal tp have 8x connections
     # generate an Erdos Renyi sparse weights mask
-    weights = lil_matrix((noRows, noCols))
-    n_params = np.count_nonzero(mask_weights[mask_weights >= prob])
-    weights[mask_weights >= prob] = np.random.uniform(-limit, limit, n_params)
+    weights = lil_matrix((noRows, noCols), dtype='float32')
+    for i in range(epsilon * (noRows + noCols)):
+        weights[np.random.randint(0, noRows), np.random.randint(0, noCols)] = np.float32(np.random.uniform(-limit, limit))
     print("Create sparse matrix with ", weights.getnnz(), " connections and ",
-           (weights.getnnz() / (noRows * noCols)) * 100, "% density level")
+          (weights.getnnz() / (noRows * noCols)) * 100, "% density level")
     weights = weights.tocsr()
     return weights
 
@@ -126,18 +128,16 @@ class SET_MLP:
         self.pdd = {}
         self.activations = {}
 
-        # t1 = datetime.datetime.now()
-
         for i in range(len(dimensions) - 2):
             self.w[i + 1] = createSparseWeights(self.epsilon, dimensions[i],
-                                                dimensions[i + 1])  #create sparse weight matrices
-            self.b[i + 1] = np.zeros(dimensions[i + 1])
+                                                dimensions[i + 1])  # create sparse weight matrices
+            self.b[i + 1] = np.zeros(dimensions[i + 1], dtype='float32')
             self.activations[i + 2] = activations[i]
 
         limit = np.sqrt(6. / float(dimensions[-2] + dimensions[-1]))
         self.w[len(dimensions) - 1] = csr_matrix(np.random.uniform(-limit, limit,
-                                                                   (dimensions[-2], dimensions[-1])))
-        self.b[len(dimensions) - 1] = np.zeros(dimensions[-1])
+                                                                   (dimensions[-2], dimensions[-1])), dtype='float32')
+        self.b[len(dimensions) - 1] = np.zeros(dimensions[-1], dtype='float32')
         self.activations[len(dimensions)] = activations[-1]
 
         # print("Creation sparse weights time: ", t2 - t1)
@@ -172,11 +172,10 @@ class SET_MLP:
     def dropout(self, x, rate):
 
         noise_shape = x.shape
-        noise = np.random.uniform(0., 1., noise_shape)
-        keep_prob = 1. - rate
-        scale = 1 / keep_prob
-        keep_mask = noise >= rate
-        return x * scale * keep_mask.astype('float64'), keep_mask.astype('float64')
+        keep_prob = 1 - rate
+        noise = np.random.binomial(1, keep_prob, noise_shape) / keep_prob
+        noise = noise.astype('float32')
+        return x * noise, noise
 
     def _feed_forward(self, x, drop=False):
         """
@@ -184,13 +183,12 @@ class SET_MLP:
         :param x: (array) Batch of input data vectors.
         :return: (tpl) Node outputs and activations per layer. The numbering of the output is equivalent to the layer numbers.
         """
-        if self.dropout_rate > 0.0: drop = True
         # w(x) + b
         z = {}
 
         # activations: f(z)
         a = {1: x}  # First layer has no activations as input. The input x is the input.
-        masks = {1: x}
+        masks = {}
 
         for i in range(1, self.n_layers):
             z[i + 1] = a[i] @ self.w[i] + self.b[i]
@@ -219,21 +217,21 @@ class SET_MLP:
         :return:
         """
         keep_prob = 1.
-        if self.dropout_rate > 0.:
+        if self.dropout_rate > 0:
             keep_prob = 1. - self.dropout_rate
 
         # Determine partial derivative and delta for the output layer.
         # delta output layer
         delta = self.loss.delta(y_true, a[self.n_layers])
-        dw = coo_matrix(self.w[self.n_layers - 1])
+        dw = coo_matrix(self.w[self.n_layers - 1], dtype='float32')
         # compute backpropagation updates
-        sparseoperations.backpropagation_updates_Cython(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
+        sparsebackpropagation.backpropagation_updates(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
 
         # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above. Please note that the running time will be much higher
         # backpropagation_updates_Numpy(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
 
         update_params = {
-            self.n_layers - 1: (dw.tocsr(), np.sum(delta, axis=0) / self.batch_size)
+            self.n_layers - 1: (dw.tocsr(), np.mean(delta, axis=0))
         }
 
         # In case of three layer net will iterate over i = 2 and i = 1
@@ -244,18 +242,17 @@ class SET_MLP:
             if keep_prob != 1:
                 delta = (delta @ self.w[i].transpose()) * self.activations[i].prime(z[i])
                 delta = delta * masks[i]
-                delta /= keep_prob
             else:
                 delta = (delta @ self.w[i].transpose()) * self.activations[i].prime(z[i])
 
-            dw = coo_matrix(self.w[i - 1])
+            dw = coo_matrix(self.w[i - 1], dtype='float32')
 
             # compute backpropagation updates
-            sparseoperations.backpropagation_updates_Cython(a[i - 1], delta, dw.row, dw.col, dw.data)
+            sparsebackpropagation.backpropagation_updates(a[i - 1], delta, dw.row, dw.col, dw.data)
             # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above. Please note that the running time will be much higher
             # backpropagation_updates_Numpy(a[i - 1], delta, dw.row, dw.col, dw.data)
 
-            update_params[i - 1] = (dw.tocsr(), np.sum(delta, axis=0) / self.batch_size)
+            update_params[i - 1] = (dw.tocsr(), np.mean(delta, axis=0))
 
         return update_params
 

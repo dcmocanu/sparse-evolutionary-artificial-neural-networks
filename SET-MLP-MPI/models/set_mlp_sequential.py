@@ -58,6 +58,7 @@ sys.stderr = open(os.devnull, 'w')
 sys.stderr = stderr
 
 
+@njit(fastmath=True)
 def backpropagation_updates_Numpy(a, delta, rows, cols, out):
     for i in range(out.shape[0]):
         s = 0
@@ -66,13 +67,13 @@ def backpropagation_updates_Numpy(a, delta, rows, cols, out):
         out[i] = s / a.shape[0]
 
 
-@njit
+@njit(fastmath=True)
 def find_first_pos(array, value):
     idx = (np.abs(array - value)).argmin()
     return idx
 
 
-@njit
+@njit(fastmath=True)
 def find_last_pos(array, value):
     idx = (np.abs(array - value))[::-1].argmin()
     return array.shape[0] - idx
@@ -81,14 +82,12 @@ def find_last_pos(array, value):
 def createSparseWeights(epsilon, noRows, noCols):
     limit = np.sqrt(6. / float(noRows + noCols))
 
-    mask_weights = np.random.rand(noRows, noCols)
-    prob = 1 - (epsilon * (noRows + noCols)) / (noRows * noCols)  # normal tp have 8x connections
     # generate an Erdos Renyi sparse weights mask
     weights = lil_matrix((noRows, noCols), dtype='float32')
-    n_params = np.count_nonzero(mask_weights[mask_weights >= prob])
-    weights[mask_weights >= prob] = np.random.uniform(-limit, limit, n_params)
+    for i in range(epsilon * (noRows + noCols)):
+        weights[np.random.randint(0, noRows), np.random.randint(0, noCols)] = np.float32(np.random.uniform(-limit, limit))
     print("Create sparse matrix with ", weights.getnnz(), " connections and ",
-           (weights.getnnz() / (noRows * noCols)) * 100, "% density level")
+          (weights.getnnz() / (noRows * noCols)) * 100, "% density level")
     weights = weights.tocsr()
     return weights
 
@@ -138,16 +137,16 @@ class SET_MLP:
         self.pdd = {}
         self.activations = {}
 
-        for i in range(len(dimensions) - 1):
+        for i in range(len(dimensions) - 2):
             self.w[i + 1] = createSparseWeights(self.epsilon, dimensions[i], dimensions[i + 1])  #create sparse weight matrices
             self.b[i + 1] = np.zeros(dimensions[i + 1], dtype='float32')
             self.activations[i + 2] = activations[i]
 
-        # limit = np.sqrt(6. / float(dimensions[-2] + dimensions[-1]))
-        # self.w[len(dimensions) - 1] = csr_matrix(np.random.uniform(-limit, limit,
-        #                                                            (dimensions[-2], dimensions[-1])), dtype='float32')
-        # self.b[len(dimensions) - 1] = np.zeros(dimensions[-1], dtype='float32')
-        # self.activations[len(dimensions)] = activations[-1]
+        limit = np.sqrt(6. / float(dimensions[-2] + dimensions[-1]))
+        self.w[len(dimensions) - 1] = csr_matrix(np.random.uniform(-limit, limit,
+                                                                   (dimensions[-2], dimensions[-1])), dtype='float32')
+        self.b[len(dimensions) - 1] = np.zeros(dimensions[-1], dtype='float32')
+        self.activations[len(dimensions)] = activations[-1]
 
         if config['loss'] == 'mse':
             self.loss = MSE(self.activations[self.n_layers])
@@ -233,10 +232,10 @@ class SET_MLP:
         delta = self.loss.delta(y_true, a[self.n_layers])
         dw = coo_matrix(self.w[self.n_layers - 1], dtype='float32')
         # compute backpropagation updates
-        sparsebackpropagation.backpropagation_updates(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
+        #sparsebackpropagation.backpropagation_updates(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
 
         # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above. Please note that the running time will be much higher
-        # backpropagation_updates_Numpy(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
+        backpropagation_updates_Numpy(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
 
         update_params = {
             self.n_layers - 1: (dw.tocsr(),  np.mean(delta, axis=0))
@@ -256,9 +255,9 @@ class SET_MLP:
             dw = coo_matrix(self.w[i - 1], dtype='float32')
 
             # compute backpropagation updates
-            sparsebackpropagation.backpropagation_updates(a[i - 1], delta, dw.row, dw.col, dw.data)
+            #sparsebackpropagation.backpropagation_updates(a[i - 1], delta, dw.row, dw.col, dw.data)
             # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above. Please note that the running time will be much higher
-            # backpropagation_updates_Numpy(a[i - 1], delta, dw.row, dw.col, dw.data)
+            backpropagation_updates_Numpy(a[i - 1], delta, dw.row, dw.col, dw.data)
 
             update_params[i - 1] = (dw.tocsr(),  np.mean(delta, axis=0))
         for k, v in update_params.items():
@@ -285,8 +284,8 @@ class SET_MLP:
             self.pdw[index] = self.momentum * self.pdw[index] - self.learning_rate * dw
             self.pdd[index] = self.momentum * self.pdd[index] - self.learning_rate * delta
 
-        self.w[index] += self.pdw[index] - self.weight_decay * self.w[index]
-        self.b[index] += self.pdd[index] - self.weight_decay * self.b[index]
+        self.w[index] += self.pdw[index] # - self.weight_decay * self.w[index]
+        self.b[index] += self.pdd[index] # - self.weight_decay * self.b[index]
 
     def train_on_batch(self, x, y):
         z, a, masks = self._feed_forward(x, True)
@@ -309,10 +308,10 @@ class SET_MLP:
 
         # Initiate the loss object with the final activation function
         self.save_filename = save_filename
-        self.inputLayerConnections = []
-        self.inputLayerConnections.append(self.getCoreInputConnections())
-        np.savez_compressed(self.save_filename + "_input_connections.npz",
-                            inputLayerConnections=self.inputLayerConnections)
+        # self.inputLayerConnections = []
+        # self.inputLayerConnections.append(self.getCoreInputConnections())
+        # np.savez_compressed(self.save_filename + "_input_connections.npz",
+        #                     inputLayerConnections=self.inputLayerConnections)
 
         maximum_accuracy = 0
         metrics = np.zeros((self.epochs, 4))
@@ -538,7 +537,7 @@ class SET_MLP:
     def weightsEvolution_II(self):
         # this represents the core of the SET procedure. It removes the weights closest to zero in each layer and add new random weights
         #evolve all layers, except the one from the last hidden layer to the output layer
-        for i in range(1, self.n_layers):
+        for i in range(1, self.n_layers - 1):
             # uncomment line below to stop evolution of dense weights more than 80% non-zeros
             #if(self.w[i].count_nonzero()/(self.w[i].get_shape()[0]*self.w[i].get_shape()[1]) < 0.8):
                 t_ev_1 = datetime.datetime.now()
@@ -548,10 +547,10 @@ class SET_MLP:
                 rowsW = wcoo.row
                 colsW = wcoo.col
 
-                pdcoo = self.pdw[i].tocoo()
-                valsPD = pdcoo.data
-                rowsPD = pdcoo.row
-                colsPD = pdcoo.col
+                # pdcoo = self.pdw[i].tocoo()
+                # valsPD = pdcoo.data
+                # rowsPD = pdcoo.row
+                # colsPD = pdcoo.col
 
                 # print("Number of non zeros in W and PD matrix before evolution in layer",i,[np.size(valsW), np.size(valsPD)])
                 values = np.sort(self.w[i].data)
@@ -567,23 +566,23 @@ class SET_MLP:
                 rowsWNew = rowsW[(valsW > smallestPositive) | (valsW < largestNegative)]
                 colsWNew = colsW[(valsW > smallestPositive) | (valsW < largestNegative)]
 
-                newWRowColIndex = np.stack((rowsWNew, colsWNew), axis=-1)
-                oldPDRowColIndex = np.stack((rowsPD, colsPD), axis=-1)
+                # newWRowColIndex = np.stack((rowsWNew, colsWNew), axis=-1)
+                # oldPDRowColIndex = np.stack((rowsPD, colsPD), axis=-1)
+                #
+                # newPDRowColIndexFlag = array_intersect(oldPDRowColIndex, newWRowColIndex)  # careful about order
+                #
+                # valsPDNew = valsPD[newPDRowColIndexFlag]
+                # rowsPDNew = rowsPD[newPDRowColIndexFlag]
+                # colsPDNew = colsPD[newPDRowColIndexFlag]
 
-                newPDRowColIndexFlag = array_intersect(oldPDRowColIndex, newWRowColIndex)  # careful about order
+                # self.pdw[i] = coo_matrix((valsPDNew, (rowsPDNew, colsPDNew)),
+                #                          (self.dimensions[i - 1], self.dimensions[i]), dtype='float32').tocsr()
 
-                valsPDNew = valsPD[newPDRowColIndexFlag]
-                rowsPDNew = rowsPD[newPDRowColIndexFlag]
-                colsPDNew = colsPD[newPDRowColIndexFlag]
-
-                self.pdw[i] = coo_matrix((valsPDNew, (rowsPDNew, colsPDNew)),
-                                         (self.dimensions[i - 1], self.dimensions[i]), dtype='float32').tocsr()
-
-                if(i==1):
-                    self.inputLayerConnections.append(coo_matrix((valsWNew, (rowsWNew, colsWNew)),
-                                       (self.dimensions[i - 1], self.dimensions[i]), dtype='float32').getnnz(axis=1))
-                    np.savez_compressed(self.save_filename + "_input_connections.npz",
-                                        inputLayerConnections=self.inputLayerConnections)
+                # if(i==1):
+                #     self.inputLayerConnections.append(coo_matrix((valsWNew, (rowsWNew, colsWNew)),
+                #                        (self.dimensions[i - 1], self.dimensions[i]), dtype='float32').getnnz(axis=1))
+                #     np.savez_compressed(self.save_filename + "_input_connections.npz",
+                #                         inputLayerConnections=self.inputLayerConnections)
 
                 # add new random connections
                 keepConnections = np.size(rowsWNew)
@@ -626,8 +625,8 @@ class SET_MLP:
                 # t_ev_2 = datetime.datetime.now()
                 # print("Weights evolution time for layer",i,"is", t_ev_2 - t_ev_1)
 
-        # self.pdw = {}
-        # self.pdd = {}
+        self.pdw = {}
+        self.pdd = {}
 
     def predict(self, x_test, y_test, batch_size=1):
         """

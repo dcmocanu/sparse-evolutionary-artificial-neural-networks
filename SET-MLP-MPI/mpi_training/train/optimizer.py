@@ -34,7 +34,11 @@ class VanillaSGD(Optimizer):
             dw = v[0]
             delta = v[1]
 
-            dw = retain_valid_updates(weights['w'][index], dw)
+            # try:
+            #     dw = retain_valid_updates(weights['w'][index], dw)
+            # except:
+            #     return weights
+
             weights['pdw'][index] = - self.learning_rate * dw
             weights['pdd'][index] = - self.learning_rate * delta
 
@@ -62,13 +66,16 @@ class MomentumSGD(Optimizer):
             dw = v[0]
             delta = v[1]
 
+            # try:
+            #     dw = retain_valid_updates(weights['w'][index], dw)
+            # except:
+            #     return weights
+
             # perform the update with momentum
             if index not in weights['pdw']:
                 weights['pdw'][index] = - self.learning_rate * dw
                 weights['pdd'][index] = - self.learning_rate * delta
             else:
-                dw = retain_valid_updates(weights['w'][index], dw)
-
                 weights['pdw'][index] = self.momentum * weights['pdw'][index] - self.learning_rate * dw
                 weights['pdd'][index] = self.momentum * weights['pdd'][index] - self.learning_rate * delta
 
@@ -193,13 +200,6 @@ def get_optimizer(name):
     return lookup[name]
 
 
-def array_intersect(A, B):
-    # this are for array intersection
-    nrows, ncols = A.shape
-    dtype = {'names': ['f{}'.format(i) for i in range(ncols)], 'formats': ncols * [A.dtype]}
-    return np.in1d(A.view(dtype), B.view(dtype))  # boolean return
-
-
 def retain_valid_updates(weights, gradient):
     cols = gradient.shape[1]
     Ia, Ja, Va = sparse.find(weights)
@@ -209,6 +209,7 @@ def retain_valid_updates(weights, gradient):
 
     indices = np.setdiff1d(Kb, Ka, assume_unique=True)
     if len(indices) != 0:
+        raise AssertionError()
         rows, cols = np.unravel_index(indices, gradient.shape)
         gradient[rows, cols] = 0
         gradient.eliminate_zeros()

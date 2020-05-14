@@ -606,8 +606,7 @@ class MPIMaster(MPIProcess):
                             self.validate(self.weights)
                             if self.epoch < self.num_epochs//(self.num_workers) - 1:
                                 t5 = datetime.datetime.now()
-
-                                self.model.weight_evolution()
+                                #self.model.weight_evolution()
                                 t6 = datetime.datetime.now()
                                 self.logger.info(f"Weights evolution time  {t6 - t5}")
                                 self.weights = self.model.get_weights()

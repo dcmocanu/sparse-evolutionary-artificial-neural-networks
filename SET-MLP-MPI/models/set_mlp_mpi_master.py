@@ -39,7 +39,7 @@ from scipy.sparse import coo_matrix
 from scipy.sparse import dok_matrix
 from scipy.sparse import csr_matrix
 from models.nn_functions import *
-from numba import njit, jit
+from numba import njit, jit, prange
 # the "sparseoperations" Cython library was tested in Ubuntu 16.04. Please note that you may encounter some "solvable" issues if you compile it in Windows.
 import sparsebackpropagation
 import datetime
@@ -52,20 +52,22 @@ sys.stderr = open(os.devnull, 'w')
 sys.stderr = stderr
 
 
+@njit(parallel=True, fastmath=True)
 def backpropagation_updates_Numpy(a, delta, rows, cols, out):
-    for i in range(out.shape[0]):
+    for i in prange(out.shape[0]):
         s = 0
         for j in range(a.shape[0]):
             s += a[j, rows[i]] * delta[j, cols[i]]
         out[i] = s / a.shape[0]
 
 
-@njit(parallel=True, fastmath=True)
+@njit(fastmath=True)
 def find_first_pos(array, value):
     idx = (np.abs(array - value)).argmin()
     return idx
 
-@njit(parallel=True, fastmath=True)
+
+@njit(fastmath=True)
 def find_last_pos(array, value):
     idx = (np.abs(array - value))[::-1].argmin()
     return array.shape[0] - idx
@@ -223,10 +225,10 @@ class SET_MLP:
         delta = self.loss.delta(y_true, a[self.n_layers])
         dw = coo_matrix(self.w[self.n_layers - 1], dtype='float32')
         # compute backpropagation updates
-        sparsebackpropagation.backpropagation_updates(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
+        #sparsebackpropagation.backpropagation_updates(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
 
         # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above. Please note that the running time will be much higher
-        # backpropagation_updates_Numpy(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
+        backpropagation_updates_Numpy(a[self.n_layers - 1], delta, dw.row, dw.col, dw.data)
 
         update_params = {
             self.n_layers - 1: (dw.tocsr(), np.mean(delta, axis=0))
@@ -246,9 +248,9 @@ class SET_MLP:
             dw = coo_matrix(self.w[i - 1], dtype='float32')
 
             # compute backpropagation updates
-            sparsebackpropagation.backpropagation_updates(a[i - 1], delta, dw.row, dw.col, dw.data)
+            #sparsebackpropagation.backpropagation_updates(a[i - 1], delta, dw.row, dw.col, dw.data)
             # If you have problems with Cython please use the backpropagation_updates_Numpy method by uncommenting the line below and commenting the one above. Please note that the running time will be much higher
-            # backpropagation_updates_Numpy(a[i - 1], delta, dw.row, dw.col, dw.data)
+            backpropagation_updates_Numpy(a[i - 1], delta, dw.row, dw.col, dw.data)
 
             update_params[i - 1] = (dw.tocsr(), np.mean(delta, axis=0))
 

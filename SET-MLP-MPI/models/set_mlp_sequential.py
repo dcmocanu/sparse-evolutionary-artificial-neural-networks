@@ -49,34 +49,52 @@ import sys
 import concurrent.futures
 import numpy as np
 import threading
-from numba import njit, jit
+from numba import njit, jit, prange, jitclass
 import functools
 import itertools
+import numba
 
 stderr = sys.stderr
 sys.stderr = open(os.devnull, 'w')
 sys.stderr = stderr
 
 
-@njit(fastmath=True)
+@njit(parallel=True, fastmath=True, cache=True)
 def backpropagation_updates_Numpy(a, delta, rows, cols, out):
-    for i in range(out.shape[0]):
+    for i in prange(out.shape[0]):
         s = 0
         for j in range(a.shape[0]):
             s += a[j, rows[i]] * delta[j, cols[i]]
         out[i] = s / a.shape[0]
 
 
-@njit(fastmath=True)
+@njit(fastmath=True, cache=True)
 def find_first_pos(array, value):
     idx = (np.abs(array - value)).argmin()
     return idx
 
 
-@njit(fastmath=True)
+@njit(fastmath=True, cache=True)
 def find_last_pos(array, value):
     idx = (np.abs(array - value))[::-1].argmin()
     return array.shape[0] - idx
+
+
+@njit(fastmath=True, cache=True)
+def compute_accuracy(activations, y_test):
+    correct_classification = 0
+    for j in range(y_test.shape[0]):
+        if np.argmax(activations[j]) == np.argmax(y_test[j]):
+            correct_classification += 1
+    return correct_classification / y_test.shape[0]
+
+
+@njit(fastmath=True, cache=True)
+def dropout(x, rate):
+    noise_shape = x.shape
+    keep_prob = 1 - rate
+    noise = np.random.binomial(1, keep_prob, noise_shape) / np.float32(keep_prob)
+    return x * noise, noise
 
 
 def createSparseWeights(epsilon, noRows, noCols):
@@ -176,14 +194,6 @@ class SET_MLP:
         self.pdw = params['pdw']
         self.pdd = params['pdd']
 
-    def dropout(self, x, rate):
-
-        noise_shape = x.shape
-        keep_prob = 1 - rate
-        noise = np.random.binomial(1, keep_prob, noise_shape) / keep_prob
-        noise = noise.astype('float32')
-        return x * noise, noise
-
     def _feed_forward(self, x, drop=False):
         """
         Execute a forward feed through the network.
@@ -202,7 +212,7 @@ class SET_MLP:
             a[i + 1] = self.activations[i + 1].activation(z[i + 1])
             if drop:
                 if i < self.n_layers - 1:
-                    a[i + 1], keep_mask = self.dropout(a[i + 1], self.dropout_rate)
+                    a[i + 1], keep_mask = dropout(a[i + 1], self.dropout_rate)
                     masks[i + 1] = keep_mask
 
         return z, a, masks
@@ -284,8 +294,8 @@ class SET_MLP:
             self.pdw[index] = self.momentum * self.pdw[index] - self.learning_rate * dw
             self.pdd[index] = self.momentum * self.pdd[index] - self.learning_rate * delta
 
-        self.w[index] += self.pdw[index] # - self.weight_decay * self.w[index]
-        self.b[index] += self.pdd[index] # - self.weight_decay * self.b[index]
+        self.w[index] += self.pdw[index]  # - self.weight_decay * self.w[index]
+        self.b[index] += self.pdd[index]  # - self.weight_decay * self.b[index]
 
     def train_on_batch(self, x, y):
         z, a, masks = self._feed_forward(x, True)
@@ -536,97 +546,87 @@ class SET_MLP:
 
     def weightsEvolution_II(self):
         # this represents the core of the SET procedure. It removes the weights closest to zero in each layer and add new random weights
-        #evolve all layers, except the one from the last hidden layer to the output layer
-        for i in range(1, self.n_layers - 1):
+        # improved running time using numpy routines - Amarsagar Reddy Ramapuram Matavalam (amar@iastate.edu)
+        for i in range(1, self.n_layers-1):
             # uncomment line below to stop evolution of dense weights more than 80% non-zeros
             #if(self.w[i].count_nonzero()/(self.w[i].get_shape()[0]*self.w[i].get_shape()[1]) < 0.8):
                 t_ev_1 = datetime.datetime.now()
-                # converting to COO form
-                wcoo = self.w[i].tocoo()
-                valsW = wcoo.data
-                rowsW = wcoo.row
-                colsW = wcoo.col
+                # converting to COO form - Added by Amar
+                wcoo=self.w[i].tocoo()
+                valsW=wcoo.data
+                rowsW=wcoo.row
+                colsW=wcoo.col
 
-                # pdcoo = self.pdw[i].tocoo()
-                # valsPD = pdcoo.data
-                # rowsPD = pdcoo.row
-                # colsPD = pdcoo.col
-
-                # print("Number of non zeros in W and PD matrix before evolution in layer",i,[np.size(valsW), np.size(valsPD)])
-                values = np.sort(self.w[i].data)
+                pdcoo=self.pdw[i].tocoo()
+                valsPD=pdcoo.data
+                rowsPD=pdcoo.row
+                colsPD=pdcoo.col
+                #print("Number of non zeros in W and PD matrix before evolution in layer",i,[np.size(valsW), np.size(valsPD)])
+                values=np.sort(self.w[i].data)
                 firstZeroPos = find_first_pos(values, 0)
                 lastZeroPos = find_last_pos(values, 0)
 
-                largestNegative = values[int((1 - self.zeta) * firstZeroPos)]
-                smallestPositive = values[
-                    int(min(values.shape[0] - 1, lastZeroPos + self.zeta * (values.shape[0] - lastZeroPos)))]
+                largestNegative = values[int((1-self.zeta) * firstZeroPos)]
+                smallestPositive = values[int(min(values.shape[0] - 1, lastZeroPos + self.zeta * (values.shape[0] - lastZeroPos)))]
 
-                # remove the weights (W) closest to zero and modify PD as well
-                valsWNew = valsW[(valsW > smallestPositive) | (valsW < largestNegative)]
-                rowsWNew = rowsW[(valsW > smallestPositive) | (valsW < largestNegative)]
-                colsWNew = colsW[(valsW > smallestPositive) | (valsW < largestNegative)]
+                #remove the weights (W) closest to zero and modify PD as well
+                valsWNew=valsW[(valsW > smallestPositive) | (valsW < largestNegative)]
+                rowsWNew=rowsW[(valsW > smallestPositive) | (valsW < largestNegative)]
+                colsWNew=colsW[(valsW > smallestPositive) | (valsW < largestNegative)]
 
-                # newWRowColIndex = np.stack((rowsWNew, colsWNew), axis=-1)
-                # oldPDRowColIndex = np.stack((rowsPD, colsPD), axis=-1)
-                #
-                # newPDRowColIndexFlag = array_intersect(oldPDRowColIndex, newWRowColIndex)  # careful about order
-                #
-                # valsPDNew = valsPD[newPDRowColIndexFlag]
-                # rowsPDNew = rowsPD[newPDRowColIndexFlag]
-                # colsPDNew = colsPD[newPDRowColIndexFlag]
+                newWRowColIndex=np.stack((rowsWNew,colsWNew) , axis=-1)
+                oldPDRowColIndex=np.stack((rowsPD,colsPD) , axis=-1)
 
-                # self.pdw[i] = coo_matrix((valsPDNew, (rowsPDNew, colsPDNew)),
-                #                          (self.dimensions[i - 1], self.dimensions[i]), dtype='float32').tocsr()
 
-                # if(i==1):
-                #     self.inputLayerConnections.append(coo_matrix((valsWNew, (rowsWNew, colsWNew)),
-                #                        (self.dimensions[i - 1], self.dimensions[i]), dtype='float32').getnnz(axis=1))
-                #     np.savez_compressed(self.save_filename + "_input_connections.npz",
-                #                         inputLayerConnections=self.inputLayerConnections)
+                newPDRowColIndexFlag=array_intersect(oldPDRowColIndex,newWRowColIndex) # careful about order
+
+                valsPDNew=valsPD[newPDRowColIndexFlag]
+                rowsPDNew=rowsPD[newPDRowColIndexFlag]
+                colsPDNew=colsPD[newPDRowColIndexFlag]
+
+                self.pdw[i] = coo_matrix((valsPDNew, (rowsPDNew, colsPDNew)),(self.dimensions[i - 1], self.dimensions[i])).tocsr()
 
                 # add new random connections
-                keepConnections = np.size(rowsWNew)
-                lengthRandom = valsW.shape[0] - keepConnections
+                keepConnections=np.size(rowsWNew)
+                lengthRandom=valsW.shape[0]-keepConnections
                 limit = np.sqrt(6. / float(self.dimensions[i - 1] + self.dimensions[i]))
                 randomVals = np.random.uniform(-limit, limit, lengthRandom)
-                #randomVals = np.zeros(lengthRandom, dtype='float32')
-                #randomVals = np.random.randn(lengthRandom) / 10  # to avoid multiple whiles, can we call 3*rand?
-                # zeroVals = 0 * randomVals  # explicit zeros
+                zeroVals=0*randomVals # explicit zeros
 
                 # adding  (wdok[ik,jk]!=0): condition
-                while (lengthRandom > 0):
-                    ik = np.random.randint(0, self.dimensions[i - 1], size=lengthRandom)
-                    jk = np.random.randint(0, self.dimensions[i], size=lengthRandom)
+                while (lengthRandom>0):
+                    ik = np.random.randint(0, self.dimensions[i - 1],size=lengthRandom,dtype='int32')
+                    jk = np.random.randint(0, self.dimensions[i],size=lengthRandom,dtype='int32')
 
-                    randomWRowColIndex = np.stack((ik, jk), axis=-1)
-                    randomWRowColIndex = np.unique(randomWRowColIndex, axis=0)  # removing duplicates in new rows&cols
-                    oldWRowColIndex = np.stack((rowsWNew, colsWNew), axis=-1)
+                    randomWRowColIndex=np.stack((ik,jk) , axis=-1)
+                    randomWRowColIndex=np.unique(randomWRowColIndex,axis=0) # removing duplicates in new rows&cols
+                    oldWRowColIndex=np.stack((rowsWNew,colsWNew) , axis=-1)
 
-                    uniqueFlag = ~array_intersect(randomWRowColIndex, oldWRowColIndex)  # careful about order & tilda
+                    uniqueFlag=~array_intersect(randomWRowColIndex,oldWRowColIndex) # careful about order & tilda
 
-                    ikNew = randomWRowColIndex[uniqueFlag][:, 0]
-                    jkNew = randomWRowColIndex[uniqueFlag][:, 1]
+
+                    ikNew=randomWRowColIndex[uniqueFlag][:,0]
+                    jkNew=randomWRowColIndex[uniqueFlag][:,1]
                     # be careful - row size and col size needs to be verified
-                    rowsWNew = np.append(rowsWNew, ikNew)
-                    colsWNew = np.append(colsWNew, jkNew)
+                    rowsWNew=np.append(rowsWNew, ikNew)
+                    colsWNew=np.append(colsWNew, jkNew)
 
-                    lengthRandom = valsW.shape[0] - np.size(rowsWNew)  # this will constantly reduce lengthRandom
+                    lengthRandom=valsW.shape[0]-np.size(rowsWNew) # this will constantly reduce lengthRandom
 
-                # adding all the values along with corresponding row and column indices
-                valsWNew = np.append(valsWNew, randomVals)
-                # valsPDNew=np.append(valsPDNew, zeroVals)
+                # adding all the values along with corresponding row and column indices - Added by Amar
+                valsWNew=np.append(valsWNew, randomVals) # be careful - we can add to an existing link ?
+                #valsPDNew=np.append(valsPDNew, zeroVals) # be careful - adding explicit zeros - any reason??
                 if (valsWNew.shape[0] != rowsWNew.shape[0]):
                     print("not good")
-                self.w[i] = coo_matrix((valsWNew, (rowsWNew, colsWNew)),
-                                       (self.dimensions[i - 1], self.dimensions[i]), dtype='float32').tocsr()
+                self.w[i]=coo_matrix((valsWNew , (rowsWNew , colsWNew)),(self.dimensions[i-1],self.dimensions[i])).tocsr()
 
-                # print("Number of non zeros in W and PD matrix after evolution in layer",i,[(self.w[i].data.shape[0]), (self.pdw[i].data.shape[0])])
+                #print("Number of non zeros in W and PD matrix after evolution in layer",i,[(self.w[i].data.shape[0]), (self.pdw[i].data.shape[0])])
 
-                # t_ev_2 = datetime.datetime.now()
-                # print("Weights evolution time for layer",i,"is", t_ev_2 - t_ev_1)
+                t_ev_2 = datetime.datetime.now()
+                #print("Weights evolution time for layer",i,"is", t_ev_2 - t_ev_1)
 
-        self.pdw = {}
-        self.pdd = {}
+        # self.pdw = {}
+        # self.pdd = {}
 
     def predict(self, x_test, y_test, batch_size=1):
         """
@@ -642,9 +642,5 @@ class SET_MLP:
             l = (j + 1) * batch_size
             _, a_test, _ = self._feed_forward(x_test[k:l], drop=False)
             activations[k:l] = a_test[self.n_layers]
-        correct_classification = 0
-        for j in range(y_test.shape[0]):
-            if np.argmax(activations[j]) == np.argmax(y_test[j]):
-                correct_classification += 1
-        accuracy = correct_classification / y_test.shape[0]
+        accuracy = compute_accuracy(activations, y_test)
         return accuracy, activations

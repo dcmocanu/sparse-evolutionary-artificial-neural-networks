@@ -1,6 +1,7 @@
 ### Optimizers used to update master process weights
 
 import numpy as np
+from numba import njit
 import logging
 import scipy.sparse as sparse
 
@@ -200,6 +201,7 @@ def get_optimizer(name):
     return lookup[name]
 
 
+@njit(fastmath=True)
 def retain_valid_updates(weights, gradient):
     cols = gradient.shape[1]
     Ia, Ja, Va = sparse.find(weights)
@@ -209,7 +211,6 @@ def retain_valid_updates(weights, gradient):
 
     indices = np.setdiff1d(Kb, Ka, assume_unique=True)
     if len(indices) != 0:
-        raise AssertionError()
         rows, cols = np.unravel_index(indices, gradient.shape)
         gradient[rows, cols] = 0
         gradient.eliminate_zeros()
@@ -217,6 +218,7 @@ def retain_valid_updates(weights, gradient):
     return gradient
 
 
+@njit(fastmath=True)
 def retain_valid_weights(correct_weights, new_weights):
     cols = new_weights.shape[1]
     Ia, Ja, Va = sparse.find(correct_weights)

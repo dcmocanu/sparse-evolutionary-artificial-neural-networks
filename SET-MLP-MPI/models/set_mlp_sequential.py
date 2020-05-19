@@ -429,16 +429,9 @@ class SET_MLP:
         metrics = np.zeros((self.epochs, 4))
         weights = []
         biases = []
+        output_generator = datagen.flow(x, y_true, batch_size=self.batch_size)
         for i in range(self.epochs):
-            # Shuffle the data
-            seed = np.arange(x.shape[0])
-            np.random.shuffle(seed)
-            x_ = x[seed]
-            y_ = y_true[seed]
-            # training
             t1 = datetime.datetime.now()
-            output_generator = datagen.flow(x_, y_, batch_size=self.batch_size)
-
             for j in range(x.shape[0] // self.batch_size):
                 x_b, y_b = next(output_generator)
                 x_b = x_b.reshape(-1, 32 * 32 * 3)

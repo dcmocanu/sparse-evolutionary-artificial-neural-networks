@@ -86,8 +86,10 @@ print("\nNon zero before pruning: ")
 for k, w in w10.items():
     print(w.count_nonzero())
 
-accuracy, _= set_mlp.predict(X_test, Y_test, batch_size=1)
+accuracy, activations_test = set_mlp.predict(X_test, Y_test, batch_size=1)
 print("\nAccuracy before pruning on the testing data: ", accuracy)
+loss_test = set_mlp.loss.loss(Y_test, activations_test)
+print(f"Loss test: {loss_test}")
 
 for k, w in w10.items():
     i, j, v = find(w)
@@ -126,11 +128,11 @@ for k, w in w10.items():
     # weights[(np.abs(np.round(weights, 2)) == np.round(positive_mean, 2)) | (np.abs(np.round(weights, 2)) == np.round(negative_mean, 2))] = 0.0
     # weights[(np.round(weights, 2) != np.round(p5, 2)) & (np.round(weights, 2) != np.round(p25, 2)) &
     #         (np.round(weights, 2) != np.round(p50, 2)) & (np.round(weights, 2) != np.round(p75, 2)) & (np.round(weights, 2) != np.round(p95, 2))] = 0.0
-    # weights[np.round(weights, 2) == np.round(p5,  2)] = 0.0
-    # weights[np.round(weights, 2) == np.round(p25, 2)] = 0.0
+    #weights[np.round(weights, 2) == np.round(p5,  2)] = 0.0
+    weights[np.round(weights, 2) == np.round(p25, 2)] = 0.0
     # weights[np.round(weights, 2) == np.round(p50, 2)] = 0.0
-    # weights[np.round(weights, 2) == np.round(p75, 2)] = 0.0
-    # weights[np.round(weights, 2) == np.round(p95, 2)] = 0.0
+    weights[np.round(weights, 2) == np.round(p75, 2)] = 0.0
+    #weights[np.round(weights, 2) == np.round(p95, 2)] = 0.0
     w = csr_matrix(weights)
     i, j, v = find(w)
     # plt.hist(v, bins=100)
@@ -148,5 +150,7 @@ print("\nNon zero after pruning: ")
 for k, w in w10.items():
     print(w.count_nonzero())
 
-accuracy, _= set_mlp.predict(X_test, Y_test, batch_size=1)
+accuracy, activations_test = set_mlp.predict(X_test, Y_test, batch_size=1)
 print("\nAccuracy after pruning on the testing data: ", accuracy)
+loss_test = set_mlp.loss.loss(Y_test, activations_test)
+print(f"Loss test: {loss_test}")

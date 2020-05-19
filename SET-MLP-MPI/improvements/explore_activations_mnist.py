@@ -86,8 +86,10 @@ print("\nNon zero before pruning: ")
 for k, w in w10.items():
     print(w.count_nonzero())
 
-accuracy, _ = set_mlp.predict(X_test, Y_test, batch_size=1)
+accuracy, activations_test= set_mlp.predict(X_test, Y_test, batch_size=1)
 print("\nAccuracy before pruning on the testing data: ", accuracy)
+loss_test = set_mlp.loss.loss(Y_test, activations_test)
+print(f"Loss test: {loss_test}")
 
 for k, w in w10.items():
     i, j, v = find(w)
@@ -145,5 +147,7 @@ print("\nNon zero after pruning: ")
 for k, w in w10.items():
     print(w.count_nonzero())
 
-accuracy, _ = set_mlp.predict(X_test, Y_test, batch_size=1)
+accuracy, activations_test = set_mlp.predict(X_test, Y_test, batch_size=1)
 print("\nAccuracy after pruning on the testing data: ", accuracy)
+loss_test = set_mlp.loss.loss(Y_test, activations_test)
+print(f"Loss test: {loss_test}")

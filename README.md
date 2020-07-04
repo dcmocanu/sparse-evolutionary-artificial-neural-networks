@@ -101,5 +101,9 @@ https://github.com/AlliedToasters/synapses
 
 Many things can be improved in "Synapses". If interested, please contact and help Michael in developing further the project.
 
+###### Update 4 June 2020
+
+Our paper "Topological insights into sparse neural networks" https://arxiv.org/pdf/2006.14085.pdf has been accepted at ECMLPKDD 2020. It proposes Neural Network Sparse Topology Distance (NNSTD) to measure the distance between different sparse neural networks. The code is here https://github.com/Shiweiliuiiiiiii/Sparse_Topology_Distance. Also, it shows in a principled manner that sparse training easily unveils a plenitude of sparse sub-networks with very different topologies which outperform the dense networks. 
+
 Many thanks,   
 Decebal

@@ -13,6 +13,8 @@
 
 ###### Implementation 2 - SET-MLP using just sparse data structures from pure Python 3 (SET-MLP-Sparse-Python-Data-Structures)
 
+* An improved version of this Implementation can be found here https://github.com/SelimaC/Tutorial-SCADS-Summer-School-2020-Scalable-Deep-Learning 
+
 * Proof of concept implementation of Sparse Evolutionary Training (SET) for Multi Layer Perceptron (MLP) on lung dataset using Python, SciPy sparse data structures, and (optionally) Cython.
 * This implementation was developed just in the last stages of the reviewing process, and we are briefly discussing about it in the "Peer Review File" which can be downloaded from Reference 1 website.   
 * This implementation can be used to create SET-MLP with hundred of thousands of neurons on a standard laptop. It was made starting from the vanilla fully connected MLP implementation of Ritchie Vink (https://www.ritchievink.com/) and we would like to acknowledge his work and thank him. Also, we would like to thank Thomas Hagebols for analyzing the performance of SciPy sparse matrix operations. We thank also to Amarsagar Reddy Ramapuram Matavalam from Iowa State University (amar@iastate.edu), who provided us a faster implementation of the "weightsEvolution" method, after the initial release of this code.
@@ -104,6 +106,10 @@ Many things can be improved in "Synapses". If interested, please contact and hel
 ###### Update 4 June 2020
 
 Our paper "Topological insights into sparse neural networks" https://arxiv.org/pdf/2006.14085.pdf has been accepted at ECMLPKDD 2020. It proposes Neural Network Sparse Topology Distance (NNSTD) to measure the distance between different sparse neural networks. The code is here https://github.com/Shiweiliuiiiiiii/Sparse_Topology_Distance. Also, it shows in a principled manner that sparse training easily unveils a plenitude of sparse sub-networks with very different topologies which outperform the dense networks. 
+
+###### Update 30 November 2020
+
+For an interesting quick read about sparse training, please have a look on this blog https://numenta.com/blog/2020/10/30/case-for-sparsity-in-neural-networks-part-2-dynamic-sparsity
 
 Many thanks,   
 Decebal

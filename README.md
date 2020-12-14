@@ -111,5 +111,14 @@ Our paper "Topological insights into sparse neural networks" https://arxiv.org/p
 
 For an interesting quick read about sparse training, please have a look on this blog https://numenta.com/blog/2020/10/30/case-for-sparsity-in-neural-networks-part-2-dynamic-sparsity
 
+###### Update 14 December 2020
+
+To see how sparse training can be used for feature selection please check our latest paper, titled "Quick and Robust Feature Selection: the Strength of Energy-efficient Sparse Training for Autoencoders", here:
+https://arxiv.org/abs/2012.00560
+
+and the corresponding truly sparse implementation here:
+https://github.com/zahraatashgahi/QuickSelection
+
+
 Many thanks,   
 Decebal

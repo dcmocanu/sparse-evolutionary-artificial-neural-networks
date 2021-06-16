@@ -1,5 +1,5 @@
 # sparse-evolutionary-artificial-neural-networks
-* Proof of concept implementations of various sparse artificial neural network models with adaptive sparse connectivity trained with the Sparse Evolutionary Training (SET) procedure.  
+* Proof of concept implementations of various sparse artificial neural network models with adaptive sparse connectivity trained with the Sparse Evolutionary Training (SET) procedure - https://arxiv.org/abs/1707.04780  
 * The following implementations are distributed in the hope that they may be useful, but without any warranties; Their use is entirely at the user's own risk.
 
 ###### Implementation 1 - SET-MLP with Keras and Tensorflow (SET-MLP-Keras-Weights-Mask)

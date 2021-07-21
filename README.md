@@ -1,6 +1,6 @@
 # sparse-evolutionary-artificial-neural-networks
 * Proof of concept implementations of various sparse artificial neural network models with adaptive sparse connectivity trained with the Sparse Evolutionary Training (SET) algorithm - https://arxiv.org/abs/1707.04780, 15 July 2017 
-* *SET* was the first algorithm which demonstrated that *sparse neural networks* can be trained from scratch to *outperform dense neural networks* within the framework of gradient descent if the sparse connections between neurons are optimized also during training together with the weights. 
+* **SET** was the first algorithm which demonstrated that **sparse neural networks** can be trained from scratch to **outperform dense neural networks** within the framework of gradient descent and introduced the idea of optimizing the sparse connections between neurons together with the weights during training. 
 * On short, **SET** laid the ground for what is today known as **sparse training** with **dynamic sparsity** (also referred to in some papers as dynamic sparse training, pruning and growth strategies, and so on). 
 
 * The following implementations are distributed in the hope that they may be useful, but without any warranties; Their use is entirely at the user's own risk.
@@ -121,7 +121,6 @@ https://arxiv.org/abs/2012.00560
 
 and the corresponding truly sparse implementation here:
 https://github.com/zahraatashgahi/QuickSelection
-
 
 Many thanks,   
 Decebal

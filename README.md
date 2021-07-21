@@ -1,8 +1,11 @@
 # sparse-evolutionary-artificial-neural-networks
 * Proof of concept implementations of various sparse artificial neural network models with adaptive sparse connectivity trained with the Sparse Evolutionary Training (SET) algorithm - https://arxiv.org/abs/1707.04780, 15 July 2017 
+* *SET* was the first algorithm which demonstrated that *sparse neural networks* can be trained from scratch to *outperform dense neural networks* within the framework of gradient descent if the sparse connections between neurons are optimized also during training together with the weights. 
+* On short, **SET** laid the ground for what is today known as **sparse training** with **dynamic sparsity** (also referred to in some papers as dynamic sparse training, pruning and growth strategies, and so on). 
+
 * The following implementations are distributed in the hope that they may be useful, but without any warranties; Their use is entirely at the user's own risk.
 
-###### Implementation 1 - SET-MLP with Keras and Tensorflow (SET-MLP-Keras-Weights-Mask)
+###### Implementation 1 - using binary masks - SET-MLP with Keras and Tensorflow (SET-MLP-Keras-Weights-Mask)
 
 * Proof of concept implementation of Sparse Evolutionary Training (SET) for Multi Layer Perceptron (MLP) on CIFAR10 using Keras and a mask over weights.  
 * This implementation can be used to test SET in varying conditions, using the Keras framework versatility, e.g. various optimizers, activation layers, tensorflow.  
@@ -11,7 +14,7 @@
 * However, due the fact that the weights are stored in the standard Keras format (dense matrices), this implementation can not scale properly.  
 * If you would like to build an SET-MLP with over 100000 neurons, please use Implementation 2.
 
-###### Implementation 2 - SET-MLP using just sparse data structures from pure Python 3 (SET-MLP-Sparse-Python-Data-Structures)
+###### Implementation 2 - truly sparse implementation - SET-MLP using just sparse data structures from pure Python 3 (SET-MLP-Sparse-Python-Data-Structures)
 
 * An improved version of this Implementation can be found here https://github.com/SelimaC/Tutorial-SCADS-Summer-School-2020-Scalable-Deep-Learning 
 
@@ -29,7 +32,7 @@
       112 minutes/epoch
 * If you would like to try out SET-MLP with various activation functions, optimization methods and so on (in the detriment of scalability) please use Implementation 1.  
 
-###### Implementation 3 - SET-RBM using just sparse data structures from pure Python 3 (SET-RBM-Sparse-Python-Data-Structures)
+###### Implementation 3 - truly sparse implementation - SET-RBM using just sparse data structures from pure Python 3 (SET-RBM-Sparse-Python-Data-Structures)
 
 * Proof of concept implementation of Sparse Evolutionary Training (SET) for Restricted Boltzmann Machine (RBM) on COIL20 dataset using Python, SciPy sparse data structures, and (optionally) Cython.  
 * This implementation can be used to create SET-RBM with hundred of thousands of neurons on a standard laptop and was developed just before the publication of Reference 1.
